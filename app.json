@@ -10,13 +10,16 @@
       "bundleIdentifier": "de.stampie.app",
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "Zum Scannen der Kunden-QR-Codes wird die Kamera benötigt."
+        "NSCameraUsageDescription": "Zum Scannen der Kunden-QR-Codes wird die Kamera benötigt.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "de.stampie.app",
       "permissions": [
-        "CAMERA"
+        "CAMERA",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "plugins": [
@@ -28,6 +31,11 @@
       ],
       "expo-asset",
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b7c28e81-5f74-4594-b5fc-769bf253d9e5"
+      }
+    }
   }
 }
