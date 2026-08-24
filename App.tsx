@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
+  Platform,
   SafeAreaView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
+  StatusBar as NativeStatusBar,
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import { CameraView, useCameraPermissions } from 'expo-camera'
@@ -20,6 +23,7 @@ type Screen =
   | { name: 'boot' }
   | { name: 'login' }
   | { name: 'change' }
+  | { name: 'home'; orgName: string }
   | { name: 'scanner'; orgName: string }
   | { name: 'issue'; orgName: string }
 
@@ -42,7 +46,7 @@ export default function App() {
         setScreen(
           me.data.mustChangePassword
             ? { name: 'change' }
-            : { name: 'scanner', orgName: me.data.org.name },
+            : { name: 'home', orgName: me.data.org.name },
         )
       } catch {
         setScreen({ name: 'login' })
@@ -58,12 +62,12 @@ export default function App() {
       return
     }
     const me = await api.me(newToken)
-    setScreen({ name: 'scanner', orgName: me.data?.org.name ?? 'Betrieb' })
+    setScreen({ name: 'home', orgName: me.data?.org.name ?? 'Betrieb' })
   }, [])
 
   const onPasswordChanged = useCallback(async () => {
     const me = token ? await api.me(token) : null
-    setScreen({ name: 'scanner', orgName: me?.data?.org.name ?? 'Betrieb' })
+    setScreen({ name: 'home', orgName: me?.data?.org.name ?? 'Betrieb' })
   }, [token])
 
   const onLogout = useCallback(async () => {
@@ -73,8 +77,8 @@ export default function App() {
   }, [])
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar style="dark" />
+    <SafeAreaView style={[styles.safe, screen.name === 'scanner' && styles.safeScanner]}>
+      <StatusBar style={screen.name === 'scanner' ? 'light' : 'dark'} />
       {screen.name === 'boot' ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#1a1a1a" />
@@ -83,17 +87,23 @@ export default function App() {
         <LoginScreen onLoggedIn={onLoggedIn} />
       ) : screen.name === 'change' ? (
         <ChangePasswordScreen token={token!} onDone={onPasswordChanged} />
+      ) : screen.name === 'home' ? (
+        <HomeScreen
+          orgName={screen.orgName}
+          onLogout={onLogout}
+          onStamp={() => setScreen({ name: 'scanner', orgName: screen.orgName })}
+          onIssue={() => setScreen({ name: 'issue', orgName: screen.orgName })}
+        />
       ) : screen.name === 'issue' ? (
         <IssueScreen
           token={token!}
-          onBack={() => setScreen({ name: 'scanner', orgName: screen.orgName })}
+          onBack={() => setScreen({ name: 'home', orgName: screen.orgName })}
         />
       ) : (
         <ScannerScreen
           token={token!}
           orgName={screen.orgName}
-          onLogout={onLogout}
-          onIssue={() => setScreen({ name: 'issue', orgName: screen.orgName })}
+          onBack={() => setScreen({ name: 'home', orgName: screen.orgName })}
         />
       )}
     </SafeAreaView>
@@ -211,19 +221,97 @@ interface ScanFeedback {
   text: string
 }
 
+/**
+ * Wie eine Ablehnung an der Kasse heißen soll.
+ *
+ * Eine gelöschte Karte ist der wichtigste Fall: der Kassierer soll nicht ein zweites Mal
+ * scannen, sondern dem Kunden sagen, dass diese Karte nicht mehr läuft. Deshalb steht das
+ * in der Überschrift und nicht nur im Kleingedruckten.
+ */
+function refusalTitle(code: string | null): string {
+  switch (code) {
+    case 'card_deleted':
+    case 'not_found':
+      return 'Karte gelöscht'
+    case 'forbidden':
+      return 'Fremde Karte'
+    case 'full':
+      return 'Karte ist voll'
+    case 'cooldown':
+      return 'Gerade eben gestempelt'
+    case 'invalid':
+      return 'QR nicht lesbar'
+    case 'rate_limited':
+      return 'Zu viele Buchungen'
+    case 'offline':
+      return 'Keine Verbindung'
+    default:
+      return 'Nicht gestempelt'
+  }
+}
+
+/** Ergänzt die Server-Meldung um den Satz, der an der Kasse die Frage „und jetzt?" klärt. */
+function refusalHint(code: string | null): string | null {
+  switch (code) {
+    case 'card_deleted':
+    case 'not_found':
+      return 'Nochmal scannen hilft nicht — dieses Kartenprogramm gibt es nicht mehr. Gib dem Kunden eine neue Karte aus.'
+    case 'cooldown':
+      return 'Das ist die Sperre gegen Doppelscans.'
+    case 'offline':
+      return 'Es wurde nichts gebucht. Sobald das Netz wieder da ist, erneut scannen.'
+    default:
+      return null
+  }
+}
+
+function HomeScreen({
+  orgName,
+  onLogout,
+  onStamp,
+  onIssue,
+}: {
+  orgName: string
+  onLogout: () => void
+  onStamp: () => void
+  onIssue: () => void
+}) {
+  return (
+    <View style={styles.homeWrap}>
+      <View style={styles.homeHeader}>
+        <View>
+          <Text style={styles.title}>Stampie</Text>
+          <Text style={styles.subtitle}>{orgName}</Text>
+        </View>
+        <TouchableOpacity onPress={onLogout}>
+          <Text style={styles.logout}>Abmelden</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.homeActions}>
+        <TouchableOpacity style={styles.homePrimaryButton} onPress={onStamp}>
+          <Text style={styles.homePrimaryText}>Karte stempeln</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.homeSecondaryButton} onPress={onIssue}>
+          <Text style={styles.homeSecondaryText}>Karte ausgeben</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  )
+}
+
 function ScannerScreen({
   token,
   orgName,
-  onLogout,
-  onIssue,
+  onBack,
 }: {
   token: string
   orgName: string
-  onLogout: () => void
-  onIssue: () => void
+  onBack: () => void
 }) {
   const [permission, requestPermission] = useCameraPermissions()
   const [feedback, setFeedback] = useState<ScanFeedback | null>(null)
+  const [torchEnabled, setTorchEnabled] = useState(false)
   const locked = useRef(false)
 
   useEffect(() => {
@@ -236,21 +324,37 @@ function ScannerScreen({
 
     const res = await api.stamp(token, data)
     if (res.ok && res.data) {
-      setFeedback({
-        kind: 'success',
-        text: res.data.completesCard
-          ? `Karte voll! ${res.data.stamps}/${res.data.stampGoal} — Belohnung einlösen`
-          : `Gestempelt — ${res.data.stamps}/${res.data.stampGoal}`,
-      })
+      const text = res.data.completesCard
+        ? `Die Karte wurde gestempelt und ist jetzt voll (${res.data.stamps}/${res.data.stampGoal}).`
+        : `Die Karte wurde gestempelt (${res.data.stamps}/${res.data.stampGoal}).`
+      setFeedback({ kind: 'success', text })
+      Alert.alert(
+        'Karte gestempelt',
+        text,
+        [
+          {
+            text: 'Zurück zur Startseite',
+            onPress: onBack,
+          },
+        ],
+        { cancelable: false },
+      )
     } else {
-      setFeedback({ kind: 'error', text: res.error ?? 'Fehler beim Stempeln.' })
+      const hint = refusalHint(res.code)
+      const text = `${res.error ?? 'Fehler beim Stempeln.'}${hint ? `\n\n${hint}` : ''}`
+      setFeedback({ kind: 'error', text })
+      Alert.alert(
+        refusalTitle(res.code),
+        text,
+        [
+          {
+            text: 'Zurück zur Startseite',
+            onPress: onBack,
+          },
+        ],
+        { cancelable: false },
+      )
     }
-
-    // Kurze Sperre gegen Mehrfach-Scan, dann wieder freigeben.
-    setTimeout(() => {
-      locked.current = false
-      setFeedback(null)
-    }, 2500)
   }
 
   if (!permission) {
@@ -275,27 +379,35 @@ function ScannerScreen({
 
   return (
     <View style={styles.scannerWrap}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>{orgName}</Text>
-        <View style={styles.headerActions}>
-          <TouchableOpacity onPress={onIssue}>
-            <Text style={styles.headerAction}>+ Karte ausgeben</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onLogout}>
-            <Text style={styles.logout}>Abmelden</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
       <CameraView
         style={styles.camera}
         facing="back"
+        enableTorch={torchEnabled}
         barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
         onBarcodeScanned={handleScan}
       />
 
-      <View style={styles.hintBar}>
-        <Text style={styles.hint}>Kunden-QR in den Rahmen halten</Text>
+      <View style={styles.cameraTopBar}>
+        <TouchableOpacity style={styles.cameraIconButton} onPress={onBack}>
+          <Text style={styles.cameraIconText}>×</Text>
+        </TouchableOpacity>
+        <Text style={styles.cameraTitle}>{orgName}</Text>
+        <TouchableOpacity
+          style={[styles.cameraIconButton, torchEnabled && styles.cameraIconButtonActive]}
+          onPress={() => setTorchEnabled((enabled) => !enabled)}
+        >
+          <Text style={styles.cameraIconText}>Blitz</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View pointerEvents="none" style={styles.scanOverlay}>
+        <View style={styles.scanFrame}>
+          <View style={[styles.scanCorner, styles.scanCornerTopLeft]} />
+          <View style={[styles.scanCorner, styles.scanCornerTopRight]} />
+          <View style={[styles.scanCorner, styles.scanCornerBottomLeft]} />
+          <View style={[styles.scanCorner, styles.scanCornerBottomRight]} />
+        </View>
+        <Text style={styles.scanHint}>QR-Code scannen</Text>
       </View>
 
       {feedback ? (
@@ -333,7 +445,15 @@ function IssueScreen({ token, onBack }: { token: string; onBack: () => void }) {
     setError(null)
     const res = await api.issueCard(token, card.id)
     setBusyId(null)
-    if (!res.ok || !res.data) return setError(res.error ?? 'Ausgeben fehlgeschlagen.')
+    if (!res.ok || !res.data) {
+      // Die Karte wurde gelöscht, während die Liste hier noch stand: Liste nachziehen,
+      // damit der nächste Griff nicht wieder danebengeht.
+      if (res.code === 'not_found') {
+        const fresh = await api.listCards(token)
+        if (fresh.ok && fresh.data) setCards(fresh.data.cards)
+      }
+      return setError(res.error ?? 'Ausgeben fehlgeschlagen.')
+    }
     setIssued(res.data)
   }
 
@@ -397,7 +517,12 @@ function IssueScreen({ token, onBack }: { token: string; onBack: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#f5f5f4' },
+  safe: {
+    flex: 1,
+    backgroundColor: '#f5f5f4',
+    paddingTop: Platform.OS === 'android' ? NativeStatusBar.currentHeight ?? 0 : 0,
+  },
+  safeScanner: { backgroundColor: '#000', paddingTop: 0 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   form: { flex: 1, padding: 24, justifyContent: 'center', gap: 12 },
   title: { fontSize: 28, fontWeight: '700', color: '#1a1a1a' },
@@ -421,6 +546,35 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   error: { color: '#c0392b', fontSize: 14 },
+  homeWrap: {
+    flex: 1,
+    backgroundColor: '#f5f5f4',
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 24,
+  },
+  homeHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  homeActions: { flex: 1, justifyContent: 'center', gap: 14 },
+  homePrimaryButton: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  homePrimaryText: { color: '#fff', fontSize: 19, fontWeight: '700' },
+  homeSecondaryButton: {
+    backgroundColor: '#fff',
+    borderColor: '#ddd',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  homeSecondaryText: { color: '#1a1a1a', fontSize: 19, fontWeight: '700' },
   scannerWrap: { flex: 1, backgroundColor: '#000' },
   header: {
     flexDirection: 'row',
@@ -431,7 +585,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f4',
   },
   headerTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a1a' },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   headerAction: { fontSize: 14, color: '#1a1a1a', fontWeight: '600' },
   logout: { fontSize: 14, color: '#666' },
   issueWrap: { flex: 1, backgroundColor: '#f5f5f4' },
@@ -451,9 +604,82 @@ const styles = StyleSheet.create({
   cardName: { fontSize: 16, fontWeight: '600', color: '#1a1a1a' },
   cardMeta: { fontSize: 13, color: '#888', marginTop: 2 },
   plus: { fontSize: 26, color: '#1a1a1a', fontWeight: '400' },
-  camera: { flex: 1 },
-  hintBar: { padding: 16, backgroundColor: '#f5f5f4', alignItems: 'center' },
-  hint: { fontSize: 14, color: '#666' },
+  camera: { ...StyleSheet.absoluteFill },
+  cameraTopBar: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    top: Platform.OS === 'android' ? NativeStatusBar.currentHeight ?? 18 : 18,
+    height: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  cameraIconButton: {
+    minWidth: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.36)',
+    paddingHorizontal: 12,
+  },
+  cameraIconButtonActive: { backgroundColor: 'rgba(255,255,255,0.24)' },
+  cameraIconText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  cameraTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  scanOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: '18%',
+    alignItems: 'center',
+  },
+  scanFrame: {
+    width: 228,
+    height: 228,
+  },
+  scanCorner: {
+    position: 'absolute',
+    width: 58,
+    height: 58,
+    borderColor: 'rgba(255,255,255,0.92)',
+  },
+  scanCornerTopLeft: {
+    top: 0,
+    left: 0,
+    borderTopWidth: 3,
+    borderLeftWidth: 3,
+    borderTopLeftRadius: 22,
+  },
+  scanCornerTopRight: {
+    top: 0,
+    right: 0,
+    borderTopWidth: 3,
+    borderRightWidth: 3,
+    borderTopRightRadius: 22,
+  },
+  scanCornerBottomLeft: {
+    bottom: 0,
+    left: 0,
+    borderBottomWidth: 3,
+    borderLeftWidth: 3,
+    borderBottomLeftRadius: 22,
+  },
+  scanCornerBottomRight: {
+    right: 0,
+    bottom: 0,
+    borderRightWidth: 3,
+    borderBottomWidth: 3,
+    borderBottomRightRadius: 22,
+  },
+  scanHint: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 22,
+    textShadowColor: 'rgba(0,0,0,0.65)',
+    textShadowRadius: 8,
+  },
   feedback: {
     position: 'absolute',
     left: 20,
