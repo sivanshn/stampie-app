@@ -14,7 +14,12 @@ import {
 import { StatusBar } from 'expo-status-bar'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import QRCode from 'react-native-qrcode-svg'
-import { api, MAX_STAMPS_PER_BOOKING, type CardOption } from './src/api'
+import {
+  api,
+  MAX_STAMPS_PER_BOOKING,
+  type CardOption,
+  type HandoutResponse,
+} from './src/api'
 import { tokenStore } from './src/storage'
 
 const TOKEN_KEY = 'stampie_token'
@@ -521,23 +526,38 @@ function StampCountStep({
   )
 }
 
+/**
+ * Karte an einen neuen Kunden ausgeben.
+ *
+ * Ein Betrieb kann mehrere Programme führen — Kaffee, Gebäck, Wäsche —, deshalb steht am
+ * Anfang die Auswahl, welche Karte der Kunde bekommen soll. Danach steht ihr Ausgabe-QR
+ * auf dem Schirm, den der Kunde mit der Kamera scannt.
+ *
+ * Der QR zeigt bewusst auf `/k/<code>` und nicht auf einen fertigen Pass: erst diese Seite
+ * baut dem scannenden Telefon seine eigene Karte und bietet Apple und Google Wallet an.
+ * Ein zweiter Scan vom selben Telefon liefert dieselbe Karte wieder, keine zweite mit null
+ * Stempeln — deshalb darf derselbe QR den ganzen Tag stehen bleiben.
+ */
 function IssueScreen({ token, onBack }: { token: string; onBack: () => void }) {
   const [cards, setCards] = useState<CardOption[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [issued, setIssued] = useState<{ serial: string; url: string; stampGoal: number } | null>(
-    null,
-  )
+  const [handout, setHandout] = useState<HandoutResponse | null>(null)
 
-  useEffect(() => {
-    ;(async () => {
-      const res = await api.listCards(token)
-      if (!res.ok || !res.data) return setError(res.error ?? 'Karten konnten nicht geladen werden.')
-      setCards(res.data.cards)
-    })()
+  const loadCards = useCallback(async () => {
+    const res = await api.listCards(token)
+    if (!res.ok || !res.data) {
+      setError(res.error ?? 'Karten konnten nicht geladen werden.')
+      return
+    }
+    setCards(res.data.cards)
   }, [token])
 
-  const issue = async (card: CardOption) => {
+  useEffect(() => {
+    void loadCards()
+  }, [loadCards])
+
+  const show = async (card: CardOption) => {
     setBusyId(card.id)
     setError(null)
     const res = await api.issueCard(token, card.id)
@@ -545,34 +565,34 @@ function IssueScreen({ token, onBack }: { token: string; onBack: () => void }) {
     if (!res.ok || !res.data) {
       // Die Karte wurde gelöscht, während die Liste hier noch stand: Liste nachziehen,
       // damit der nächste Griff nicht wieder danebengeht.
-      if (res.code === 'not_found') {
-        const fresh = await api.listCards(token)
-        if (fresh.ok && fresh.data) setCards(fresh.data.cards)
-      }
+      if (res.code === 'not_found') await loadCards()
       return setError(res.error ?? 'Ausgeben fehlgeschlagen.')
     }
-    setIssued(res.data)
+    setHandout(res.data)
   }
 
   return (
     <View style={styles.issueWrap}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
+        <TouchableOpacity onPress={handout ? () => setHandout(null) : onBack}>
           <Text style={styles.headerAction}>‹ Zurück</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Karte ausgeben</Text>
+        <Text style={styles.headerTitle}>{handout ? handout.cardName : 'Karte ausgeben'}</Text>
         <View style={{ width: 60 }} />
       </View>
 
-      {issued ? (
+      {handout ? (
         <View style={styles.qrBox}>
           <Text style={styles.qrHint}>Vom Kunden scannen lassen:</Text>
           <View style={styles.qrCard}>
-            <QRCode value={issued.url} size={220} />
+            <QRCode value={handout.url} size={220} />
           </View>
-          <Text style={styles.serial}>{issued.serial}</Text>
-          <TouchableOpacity style={styles.button} onPress={() => setIssued(null)}>
-            <Text style={styles.buttonText}>Weitere Karte ausgeben</Text>
+          <Text style={styles.qrCaption}>
+            Der Kunde legt die Karte damit selbst in sein Wallet — {handout.stampGoal} Stempel bis
+            zur Belohnung. Der Code bleibt gültig, er kann für den nächsten Kunden stehen bleiben.
+          </Text>
+          <TouchableOpacity style={styles.button} onPress={() => setHandout(null)}>
+            <Text style={styles.buttonText}>Andere Karte wählen</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={onBack}>
             <Text style={[styles.logout, { marginTop: 12 }]}>Fertig</Text>
@@ -592,17 +612,23 @@ function IssueScreen({ token, onBack }: { token: string; onBack: () => void }) {
           {cards.map((c) => (
             <TouchableOpacity
               key={c.id}
-              style={styles.cardRow}
+              style={[styles.cardRow, !c.isPublished && styles.cardRowMuted]}
               disabled={busyId !== null}
-              onPress={() => issue(c)}
+              onPress={() => void show(c)}
             >
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardName}>{c.programName}</Text>
                 <Text style={styles.cardMeta}>
-                  Ziel: {c.stampGoal} Stempel {c.isPublished ? '' : '· Entwurf'}
+                  {c.isPublished
+                    ? `Ziel: ${c.stampGoal} Stempel`
+                    : 'Entwurf — erst veröffentlichen'}
                 </Text>
               </View>
-              {busyId === c.id ? <ActivityIndicator color="#1a1a1a" /> : <Text style={styles.plus}>+</Text>}
+              {busyId === c.id ? (
+                <ActivityIndicator color="#1a1a1a" />
+              ) : (
+                <Text style={styles.plus}>›</Text>
+              )}
             </TouchableOpacity>
           ))}
         </View>
@@ -819,6 +845,14 @@ const styles = StyleSheet.create({
     color: '#1a1a1a',
     minWidth: 60,
     textAlign: 'center',
+  },
+  cardRowMuted: { opacity: 0.55 },
+  qrCaption: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#555',
+    textAlign: 'center',
+    paddingHorizontal: 8,
   },
   feedbackOk: { backgroundColor: '#1e8e3e' },
   feedbackErr: { backgroundColor: '#c0392b' },

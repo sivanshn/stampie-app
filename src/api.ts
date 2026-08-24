@@ -103,9 +103,19 @@ export interface CardOption {
   programName: string
   stampGoal: number
   isPublished: boolean
+  /** Ob der Ausgabe-Link dieser Karte schon existiert; sonst entsteht er beim ersten Mal. */
+  hasHandout: boolean
 }
-export interface IssueResponse {
-  serial: string
+
+/**
+ * Der Ausgabe-QR einer Karte.
+ *
+ * `url` zeigt auf `/k/<code>` — die Seite, die dem Telefon des Kunden seinen eigenen Pass
+ * baut und Apple und Google Wallet anbietet. Derselbe Link steckt auf den NFC-Chips.
+ */
+export interface HandoutResponse {
+  cardId: string
+  cardName: string
   url: string
   stampGoal: number
 }
@@ -121,5 +131,5 @@ export const api = {
   listCards: (token: string) =>
     request<{ cards: CardOption[] }>('/api/app/cards', 'GET', undefined, token),
   issueCard: (token: string, cardId: string) =>
-    request<IssueResponse>('/api/app/cards/issue', 'POST', { cardId }, token),
+    request<HandoutResponse>('/api/app/cards/issue', 'POST', { cardId }, token),
 }
