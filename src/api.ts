@@ -90,8 +90,13 @@ export interface StampResponse {
   serial: string
   stamps: number
   stampGoal: number
+  /** Wirklich gebuchte Stempel — am Kartenziel gedeckelt, kann unter der Anfrage liegen. */
+  booked: number
   completesCard: boolean
 }
+
+/** Mehr als das ist an der Kasse ein Vertipper; der Server deckelt genauso. */
+export const MAX_STAMPS_PER_BOOKING = 10
 export interface CardOption {
   id: string
   name: string
@@ -111,8 +116,8 @@ export const api = {
   me: (token: string) => request<MeResponse>('/api/app/me', 'GET', undefined, token),
   changePassword: (token: string, newPassword: string) =>
     request<{ ok: boolean }>('/api/app/change-password', 'POST', { newPassword }, token),
-  stamp: (token: string, scanned: string) =>
-    request<StampResponse>('/api/app/stamp', 'POST', { scanned }, token),
+  stamp: (token: string, scanned: string, count = 1) =>
+    request<StampResponse>('/api/app/stamp', 'POST', { scanned, count }, token),
   listCards: (token: string) =>
     request<{ cards: CardOption[] }>('/api/app/cards', 'GET', undefined, token),
   issueCard: (token: string, cardId: string) =>

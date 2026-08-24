@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
-  Alert,
   Platform,
+  Modal,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -14,7 +14,7 @@ import {
 import { StatusBar } from 'expo-status-bar'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import QRCode from 'react-native-qrcode-svg'
-import { api, type CardOption } from './src/api'
+import { api, MAX_STAMPS_PER_BOOKING, type CardOption } from './src/api'
 import { tokenStore } from './src/storage'
 
 const TOKEN_KEY = 'stampie_token'
@@ -216,11 +216,6 @@ function ChangePasswordScreen({ token, onDone }: { token: string; onDone: () => 
   )
 }
 
-interface ScanFeedback {
-  kind: 'success' | 'error'
-  text: string
-}
-
 /**
  * Wie eine Ablehnung an der Kasse heißen soll.
  *
@@ -300,6 +295,20 @@ function HomeScreen({
   )
 }
 
+/**
+ * Was nach einem Scan gerade auf dem Schirm steht.
+ *
+ * Ein Scan ist kein einzelner Moment mehr: erst fragt die Kasse, wie viele Stempel es sein
+ * sollen, dann bucht sie, dann steht die Antwort da, bis jemand entscheidet, ob es
+ * weitergeht. Als Zustand ausgeschrieben, weil `Alert` weder eine Zahl abfragen noch zwei
+ * gleichwertige Auswege anbieten kann.
+ */
+type ScanStage =
+  | { name: 'scanning' }
+  | { name: 'asking'; scanned: string }
+  | { name: 'booking' }
+  | { name: 'done'; kind: 'success' | 'error'; title: string; text: string }
+
 function ScannerScreen({
   token,
   orgName,
@@ -310,51 +319,59 @@ function ScannerScreen({
   onBack: () => void
 }) {
   const [permission, requestPermission] = useCameraPermissions()
-  const [feedback, setFeedback] = useState<ScanFeedback | null>(null)
+  const [stage, setStage] = useState<ScanStage>({ name: 'scanning' })
+  const [count, setCount] = useState(1)
   const [torchEnabled, setTorchEnabled] = useState(false)
+  // Die Kamera feuert weiter, während React den Zustand setzt — der Riegel muss deshalb
+  // sofort greifen und nicht erst beim nächsten Rendern.
   const locked = useRef(false)
 
   useEffect(() => {
     if (permission && !permission.granted) requestPermission()
   }, [permission, requestPermission])
 
-  const handleScan = async ({ data }: { data: string }) => {
+  const backToScanning = () => {
+    locked.current = false
+    setCount(1)
+    setStage({ name: 'scanning' })
+  }
+
+  const handleScan = ({ data }: { data: string }) => {
     if (locked.current) return
     locked.current = true
+    setCount(1)
+    setStage({ name: 'asking', scanned: data })
+  }
 
-    const res = await api.stamp(token, data)
+  const book = async (scanned: string) => {
+    const wanted = count
+    setStage({ name: 'booking' })
+    const res = await api.stamp(token, scanned, wanted)
+
     if (res.ok && res.data) {
-      const text = res.data.completesCard
-        ? `Die Karte wurde gestempelt und ist jetzt voll (${res.data.stamps}/${res.data.stampGoal}).`
-        : `Die Karte wurde gestempelt (${res.data.stamps}/${res.data.stampGoal}).`
-      setFeedback({ kind: 'success', text })
-      Alert.alert(
-        'Karte gestempelt',
-        text,
-        [
-          {
-            text: 'Zurück zur Startseite',
-            onPress: onBack,
-          },
-        ],
-        { cancelable: false },
-      )
-    } else {
-      const hint = refusalHint(res.code)
-      const text = `${res.error ?? 'Fehler beim Stempeln.'}${hint ? `\n\n${hint}` : ''}`
-      setFeedback({ kind: 'error', text })
-      Alert.alert(
-        refusalTitle(res.code),
-        text,
-        [
-          {
-            text: 'Zurück zur Startseite',
-            onPress: onBack,
-          },
-        ],
-        { cancelable: false },
-      )
+      const { booked, stamps, stampGoal, completesCard } = res.data
+      const gebucht = booked === 1 ? '1 Stempel' : `${booked} Stempel`
+      // Am Ziel gedeckelt: was angefragt war, muss nicht sein, was gebucht wurde.
+      const gekuerzt =
+        booked < wanted ? `\n\nMehr passt nicht mehr auf die Karte.` : ''
+      setStage({
+        name: 'done',
+        kind: 'success',
+        title: completesCard ? 'Karte ist voll' : 'Gestempelt',
+        text: completesCard
+          ? `${gebucht} gebucht. Die Karte ist jetzt voll (${stamps}/${stampGoal}) — Belohnung einlösen.${gekuerzt}`
+          : `${gebucht} gebucht (${stamps}/${stampGoal}).${gekuerzt}`,
+      })
+      return
     }
+
+    const hint = refusalHint(res.code)
+    setStage({
+      name: 'done',
+      kind: 'error',
+      title: refusalTitle(res.code),
+      text: `${res.error ?? 'Fehler beim Stempeln.'}${hint ? `\n\n${hint}` : ''}`,
+    })
   }
 
   if (!permission) {
@@ -410,17 +427,97 @@ function ScannerScreen({
         <Text style={styles.scanHint}>QR-Code scannen</Text>
       </View>
 
-      {feedback ? (
-        <View
-          style={[
-            styles.feedback,
-            feedback.kind === 'success' ? styles.feedbackOk : styles.feedbackErr,
-          ]}
-        >
-          <Text style={styles.feedbackText}>{feedback.text}</Text>
+      <Modal
+        visible={stage.name !== 'scanning'}
+        transparent
+        animationType="fade"
+        onRequestClose={backToScanning}
+      >
+        <View style={styles.sheetBackdrop}>
+          <View style={styles.sheet}>
+            {stage.name === 'asking' ? (
+              <StampCountStep
+                count={count}
+                onChange={setCount}
+                onCancel={backToScanning}
+                onConfirm={() => void book(stage.scanned)}
+              />
+            ) : stage.name === 'booking' ? (
+              <View style={styles.sheetBusy}>
+                <ActivityIndicator size="large" color="#1a1a1a" />
+                <Text style={styles.sheetHint}>Wird gebucht …</Text>
+              </View>
+            ) : stage.name === 'done' ? (
+              <>
+                <View
+                  style={[
+                    styles.sheetBanner,
+                    stage.kind === 'success' ? styles.feedbackOk : styles.feedbackErr,
+                  ]}
+                >
+                  <Text style={styles.feedbackText}>{stage.title}</Text>
+                </View>
+                <Text style={styles.sheetText}>{stage.text}</Text>
+                <TouchableOpacity style={styles.button} onPress={backToScanning}>
+                  <Text style={styles.buttonText}>Weiter stempeln</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.sheetGhostButton} onPress={onBack}>
+                  <Text style={styles.sheetGhostText}>Zur Startseite</Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
+          </View>
         </View>
-      ) : null}
+      </Modal>
     </View>
+  )
+}
+
+/**
+ * Die Frage nach der Anzahl, bevor gebucht wird.
+ *
+ * Eins ist voreingestellt, weil das der Normalfall an der Kasse ist — wer nur bestätigt,
+ * bekommt genau den. Die Obergrenze ist dieselbe wie auf dem Server; mehr ist ein
+ * Vertipper, kein Wunsch.
+ */
+function StampCountStep({
+  count,
+  onChange,
+  onCancel,
+  onConfirm,
+}: {
+  count: number
+  onChange: (next: number) => void
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <>
+      <Text style={styles.sheetTitle}>Wie viele Stempel?</Text>
+      <View style={styles.stepper}>
+        <TouchableOpacity
+          style={[styles.stepperButton, count <= 1 && styles.buttonDisabled]}
+          disabled={count <= 1}
+          onPress={() => onChange(count - 1)}
+        >
+          <Text style={styles.stepperButtonText}>−</Text>
+        </TouchableOpacity>
+        <Text style={styles.stepperValue}>{count}</Text>
+        <TouchableOpacity
+          style={[styles.stepperButton, count >= MAX_STAMPS_PER_BOOKING && styles.buttonDisabled]}
+          disabled={count >= MAX_STAMPS_PER_BOOKING}
+          onPress={() => onChange(count + 1)}
+        >
+          <Text style={styles.stepperButtonText}>+</Text>
+        </TouchableOpacity>
+      </View>
+      <TouchableOpacity style={styles.button} onPress={onConfirm}>
+        <Text style={styles.buttonText}>{count === 1 ? 'Stempeln' : `${count} Stempel buchen`}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.sheetGhostButton} onPress={onCancel}>
+        <Text style={styles.sheetGhostText}>Abbrechen</Text>
+      </TouchableOpacity>
+    </>
   )
 }
 
@@ -680,14 +777,48 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.65)',
     textShadowRadius: 8,
   },
-  feedback: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    bottom: 90,
-    padding: 18,
-    borderRadius: 14,
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 24,
+    paddingBottom: 34,
+    gap: 12,
+  },
+  sheetBusy: { alignItems: 'center', gap: 12, paddingVertical: 24 },
+  sheetTitle: { fontSize: 20, fontWeight: '700', color: '#1a1a1a', textAlign: 'center' },
+  sheetText: { fontSize: 16, lineHeight: 22, color: '#1a1a1a', textAlign: 'center' },
+  sheetHint: { fontSize: 15, color: '#555' },
+  sheetBanner: { borderRadius: 12, paddingVertical: 14, paddingHorizontal: 16 },
+  sheetGhostButton: { alignItems: 'center', paddingVertical: 12 },
+  sheetGhostText: { fontSize: 16, fontWeight: '600', color: '#555' },
+  stepper: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 24,
+    paddingVertical: 8,
+  },
+  stepperButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#f0efed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperButtonText: { fontSize: 30, fontWeight: '700', color: '#1a1a1a' },
+  stepperValue: {
+    fontSize: 44,
+    fontWeight: '700',
+    color: '#1a1a1a',
+    minWidth: 60,
+    textAlign: 'center',
   },
   feedbackOk: { backgroundColor: '#1e8e3e' },
   feedbackErr: { backgroundColor: '#c0392b' },
