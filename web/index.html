@@ -184,10 +184,23 @@
     var saved = getToken();
     if (!saved){ show("s-login"); return; }
     token = saved;
+    // Sofort eingeloggt anzeigen (mit gemerktem Betriebsnamen) — kein erneutes Passwort noetig.
+    var cachedOrg = "";
+    try { cachedOrg = localStorage.getItem("stampie_org") || ""; } catch(e){}
+    goScanner(cachedOrg || "Betrieb");
+    // Sitzung im Hintergrund pruefen. NUR bei echtem 401 (Sitzung ungueltig) abmelden.
+    // Bei Netzwerkfehler (status 0) bleibt der Betrieb eingeloggt.
     var me = await api.me();
-    if (!me.ok || !me.data){ delToken(); show("s-login"); return; }
-    if (me.data.mustChangePassword){ show("s-change"); return; }
-    goScanner(me.data.org && me.data.org.name);
+    if (me.status === 401){
+      delToken();
+      try { localStorage.removeItem("stampie_org"); } catch(e){}
+      show("s-login");
+      return;
+    }
+    if (me.ok && me.data){
+      if (me.data.mustChangePassword){ show("s-change"); return; }
+      goScanner(me.data.org && me.data.org.name);
+    }
   }
 
   $("l-submit").addEventListener("click", async function(){
@@ -220,6 +233,7 @@
 
   function goScanner(orgName){
     $("sc-org").textContent = orgName || "Betrieb";
+    try { if (orgName) localStorage.setItem("stampie_org", orgName); } catch(e){}
     show("s-scanner");
     $("sc-start").classList.remove("hidden");
   }
@@ -277,6 +291,7 @@
   $("sc-logout").addEventListener("click", async function(){
     await stopScanner();
     delToken();
+    try { localStorage.removeItem("stampie_org"); } catch(e){}
     show("s-login");
   });
 
