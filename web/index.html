@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>Stampie – Betrieb</title>
+<meta name="theme-color" content="#1a1a1a" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black" />
+<meta name="apple-mobile-web-app-title" content="Stampie" />
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f5f5f4; color: #1a1a1a;
+    padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+  }
+  #app { max-width: 480px; margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; }
+  .screen { flex: 1; display: none; flex-direction: column; }
+  .screen.active { display: flex; }
+  .center { flex: 1; display: flex; align-items: center; justify-content: center; }
+  .form { flex: 1; padding: 24px; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
+  h1 { font-size: 28px; font-weight: 700; margin: 0; }
+  .subtitle { font-size: 15px; color: #666; margin: 0 0 12px; }
+  input {
+    width: 100%; border: 1px solid #ddd; border-radius: 10px; padding: 12px 14px;
+    font-size: 16px; background: #fff; outline: none;
+  }
+  input:focus { border-color: #1a1a1a; }
+  button.primary {
+    background: #1a1a1a; color: #fff; border: 0; border-radius: 10px;
+    padding: 14px; font-size: 16px; font-weight: 600; margin-top: 8px; cursor: pointer;
+  }
+  button.primary:disabled { opacity: .5; }
+  .error { color: #c0392b; font-size: 14px; min-height: 18px; }
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; background: #f5f5f4; gap: 12px;
+  }
+  .header .title { font-size: 16px; font-weight: 700; }
+  .header .actions { display: flex; align-items: center; gap: 16px; }
+  .linkbtn { background: none; border: 0; font-size: 14px; font-weight: 600; color: #1a1a1a; cursor: pointer; padding: 0; }
+  .linkbtn.muted { color: #666; font-weight: 400; }
+  #reader { width: 100%; background: #000; }
+  .scanwrap { flex: 1; display: flex; flex-direction: column; background: #000; position: relative; }
+  .hintbar { padding: 16px; background: #f5f5f4; text-align: center; color: #666; font-size: 14px; }
+  .startbtn { margin: 24px; }
+  .feedback {
+    position: fixed; left: 20px; right: 20px; bottom: calc(90px + env(safe-area-inset-bottom));
+    padding: 18px; border-radius: 14px; text-align: center; color: #fff; font-size: 17px; font-weight: 700;
+    max-width: 440px; margin: 0 auto; z-index: 50;
+  }
+  .feedback.ok { background: #1e8e3e; }
+  .feedback.err { background: #c0392b; }
+  .cardrow {
+    display: flex; align-items: center; background: #fff; border: 1px solid #eee;
+    border-radius: 12px; padding: 14px; margin-bottom: 10px; cursor: pointer;
+  }
+  .cardrow .name { font-size: 16px; font-weight: 600; }
+  .cardrow .meta { font-size: 13px; color: #888; margin-top: 2px; }
+  .cardrow .plus { font-size: 26px; }
+  .qrbox { text-align: center; padding: 24px; }
+  .qrcard { display: inline-block; background: #fff; padding: 20px; border-radius: 16px; margin: 14px 0; }
+  .serial { font-size: 18px; font-weight: 700; letter-spacing: 2px; }
+  .pad { padding: 16px; }
+  .hidden { display: none !important; }
+  .spinner { width: 28px; height: 28px; border: 3px solid #ccc; border-top-color: #1a1a1a; border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- BOOT -->
+  <section id="s-boot" class="screen active"><div class="center"><div class="spinner"></div></div></section>
+
+  <!-- LOGIN -->
+  <section id="s-login" class="screen">
+    <div class="form">
+      <h1>Stampie</h1>
+      <p class="subtitle">Betriebs-Anmeldung</p>
+      <input id="l-user" placeholder="Benutzername" autocapitalize="none" autocorrect="off" autocomplete="username" />
+      <input id="l-pass" placeholder="Passwort" type="password" autocomplete="current-password" />
+      <div class="error" id="l-error"></div>
+      <button class="primary" id="l-submit">Anmelden</button>
+    </div>
+  </section>
+
+  <!-- CHANGE PASSWORD -->
+  <section id="s-change" class="screen">
+    <div class="form">
+      <h1>Neues Passwort</h1>
+      <p class="subtitle">Bitte das Start-Passwort jetzt ändern.</p>
+      <input id="c-pw1" placeholder="Neues Passwort" type="password" autocomplete="new-password" />
+      <input id="c-pw2" placeholder="Neues Passwort wiederholen" type="password" autocomplete="new-password" />
+      <div class="error" id="c-error"></div>
+      <button class="primary" id="c-submit">Speichern</button>
+    </div>
+  </section>
+
+  <!-- SCANNER -->
+  <section id="s-scanner" class="screen">
+    <div class="header">
+      <span class="title" id="sc-org">Betrieb</span>
+      <div class="actions">
+        <button class="linkbtn" id="sc-issue">+ Karte ausgeben</button>
+        <button class="linkbtn muted" id="sc-logout">Abmelden</button>
+      </div>
+    </div>
+    <div class="scanwrap">
+      <div id="reader"></div>
+      <button class="primary startbtn" id="sc-start">Scanner starten</button>
+    </div>
+    <div class="hintbar">Kunden-QR in den Rahmen halten</div>
+    <div id="sc-feedback" class="feedback hidden"></div>
+  </section>
+
+  <!-- ISSUE -->
+  <section id="s-issue" class="screen">
+    <div class="header">
+      <button class="linkbtn" id="is-back">‹ Zurück</button>
+      <span class="title">Karte ausgeben</span>
+      <span style="width:60px"></span>
+    </div>
+    <div id="is-body" class="pad"><div class="center"><div class="spinner"></div></div></div>
+  </section>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+  // Cross-Origin zum stemply-Backend. Lokal (localhost) gegen den Dev-Server.
+  var API_BASE = (location.hostname === "localhost" || location.hostname === "127.0.0.1")
+    ? "http://localhost:3000"
+    : "https://stemply-xi.vercel.app";
+
+  var TOKEN_KEY = "stampie_token";
+  var token = null;
+
+  function $(id){ return document.getElementById(id); }
+  function show(id){
+    var list = document.querySelectorAll(".screen");
+    for (var i=0;i<list.length;i++) list[i].classList.remove("active");
+    $(id).classList.add("active");
+  }
+  function getToken(){ try { return localStorage.getItem(TOKEN_KEY); } catch(e){ return null; } }
+  function setToken(t){ token = t; try { localStorage.setItem(TOKEN_KEY, t); } catch(e){} }
+  function delToken(){ token = null; try { localStorage.removeItem(TOKEN_KEY); } catch(e){} }
+
+  async function apiFetch(path, method, body, useToken){
+    try {
+      var res = await fetch(API_BASE + path, {
+        method: method,
+        headers: Object.assign(
+          { "Content-Type": "application/json" },
+          useToken && token ? { "Authorization": "Bearer " + token } : {}
+        ),
+        body: body ? JSON.stringify(body) : undefined
+      });
+      var json = null;
+      try { json = await res.json(); } catch(e) { json = null; }
+      return { ok: res.ok, status: res.status, data: res.ok ? json : null,
+               error: res.ok ? null : ((json && json.error) || ("Fehler " + res.status)) };
+    } catch(e) {
+      return { ok:false, status:0, data:null, error:"Keine Verbindung zum Server." };
+    }
+  }
+  var api = {
+    login: function(u,p){ return apiFetch("/api/app/login","POST",{username:u,password:p},false); },
+    me: function(){ return apiFetch("/api/app/me","GET",null,true); },
+    changePassword: function(pw){ return apiFetch("/api/app/change-password","POST",{newPassword:pw},true); },
+    stamp: function(scanned){ return apiFetch("/api/app/stamp","POST",{scanned:scanned},true); },
+    listCards: function(){ return apiFetch("/api/app/cards","GET",null,true); },
+    issueCard: function(cardId){ return apiFetch("/api/app/cards/issue","POST",{cardId:cardId},true); }
+  };
+
+  async function boot(){
+    var saved = getToken();
+    if (!saved){ show("s-login"); return; }
+    token = saved;
+    var me = await api.me();
+    if (!me.ok || !me.data){ delToken(); show("s-login"); return; }
+    if (me.data.mustChangePassword){ show("s-change"); return; }
+    goScanner(me.data.org && me.data.org.name);
+  }
+
+  $("l-submit").addEventListener("click", async function(){
+    var btn = this; var u = $("l-user").value.trim(); var p = $("l-pass").value;
+    if (!u || !p) return;
+    btn.disabled = true; $("l-error").textContent = "";
+    var res = await api.login(u,p);
+    btn.disabled = false;
+    if (!res.ok || !res.data){ $("l-error").textContent = res.error || "Anmeldung fehlgeschlagen."; return; }
+    setToken(res.data.token);
+    if (res.data.mustChangePassword){ show("s-change"); return; }
+    var me = await api.me();
+    goScanner(me.data && me.data.org ? me.data.org.name : "Betrieb");
+  });
+  $("l-pass").addEventListener("keydown", function(e){ if (e.key === "Enter") $("l-submit").click(); });
+
+  $("c-submit").addEventListener("click", async function(){
+    var btn = this; var a = $("c-pw1").value; var b = $("c-pw2").value;
+    if (a !== b){ $("c-error").textContent = "Die Passwörter stimmen nicht überein."; return; }
+    if (a.length < 8){ $("c-error").textContent = "Mindestens 8 Zeichen."; return; }
+    btn.disabled = true; $("c-error").textContent = "";
+    var res = await api.changePassword(a);
+    btn.disabled = false;
+    if (!res.ok){ $("c-error").textContent = res.error || "Konnte nicht gespeichert werden."; return; }
+    var me = await api.me();
+    goScanner(me.data && me.data.org ? me.data.org.name : "Betrieb");
+  });
+
+  var scanner = null, scanning = false, locked = false;
+
+  function goScanner(orgName){
+    $("sc-org").textContent = orgName || "Betrieb";
+    show("s-scanner");
+    $("sc-start").classList.remove("hidden");
+  }
+
+  function showFeedback(kind, text){
+    var el = $("sc-feedback");
+    el.textContent = text;
+    el.className = "feedback " + (kind === "ok" ? "ok" : "err");
+    setTimeout(function(){ el.className = "feedback hidden"; }, 2500);
+  }
+
+  async function onScan(decodedText){
+    if (locked) return;
+    locked = true;
+    var res = await api.stamp(decodedText);
+    if (res.ok && res.data){
+      var d = res.data;
+      showFeedback("ok", d.completesCard
+        ? ("Karte voll! " + d.stamps + "/" + d.stampGoal + " — Belohnung einlösen")
+        : ("Gestempelt — " + d.stamps + "/" + d.stampGoal));
+    } else {
+      showFeedback("err", res.error || "Fehler beim Stempeln.");
+    }
+    setTimeout(function(){ locked = false; }, 2500);
+  }
+
+  $("sc-start").addEventListener("click", async function(){
+    if (scanning) return;
+    this.disabled = true; this.textContent = "Kamera wird gestartet…";
+    try {
+      scanner = new Html5Qrcode("reader");
+      await scanner.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        onScan,
+        function(){}
+      );
+      scanning = true;
+      this.classList.add("hidden");
+    } catch(e){
+      this.disabled = false; this.textContent = "Scanner starten";
+      showFeedback("err", "Kamera nicht verfügbar. Bitte Kamera-Zugriff erlauben.");
+    }
+  });
+
+  async function stopScanner(){
+    if (scanner && scanning){
+      try { await scanner.stop(); } catch(e){}
+      try { scanner.clear(); } catch(e){}
+    }
+    scanner = null; scanning = false; locked = false;
+    $("sc-start").disabled = false; $("sc-start").textContent = "Scanner starten"; $("sc-start").classList.remove("hidden");
+  }
+
+  $("sc-logout").addEventListener("click", async function(){
+    await stopScanner();
+    delToken();
+    show("s-login");
+  });
+
+  $("sc-issue").addEventListener("click", async function(){
+    await stopScanner();
+    openIssue();
+  });
+
+  $("is-back").addEventListener("click", function(){
+    goScanner($("sc-org").textContent);
+  });
+
+  async function openIssue(){
+    show("s-issue");
+    var body = $("is-body");
+    body.innerHTML = '<div class="center"><div class="spinner"></div></div>';
+    var res = await api.listCards();
+    if (!res.ok || !res.data){ body.innerHTML = '<p class="error">' + (res.error || "Karten konnten nicht geladen werden.") + '</p>'; return; }
+    var cards = res.data.cards || [];
+    if (cards.length === 0){ body.innerHTML = '<p class="subtitle">Noch keine Karte angelegt.</p>'; return; }
+    body.innerHTML = '<p class="subtitle">Welche Karte soll der Kunde bekommen?</p>';
+    cards.forEach(function(c){
+      var row = document.createElement("div");
+      row.className = "cardrow";
+      row.innerHTML = '<div style="flex:1"><div class="name"></div><div class="meta"></div></div><div class="plus">+</div>';
+      row.querySelector(".name").textContent = c.programName || c.name;
+      row.querySelector(".meta").textContent = "Ziel: " + c.stampGoal + " Stempel" + (c.isPublished ? "" : " · Entwurf");
+      row.addEventListener("click", function(){ issueCard(c, row); });
+      body.appendChild(row);
+    });
+  }
+
+  async function issueCard(card, row){
+    row.style.opacity = ".5";
+    var res = await api.issueCard(card.id);
+    row.style.opacity = "1";
+    if (!res.ok || !res.data){
+      var err = $("is-body").querySelector(".error");
+      if (!err){ err = document.createElement("p"); err.className = "error pad"; $("is-body").appendChild(err); }
+      err.textContent = res.error || "Ausgeben fehlgeschlagen.";
+      return;
+    }
+    showIssued(res.data);
+  }
+
+  function showIssued(data){
+    var body = $("is-body");
+    body.innerHTML =
+      '<div class="qrbox">' +
+      '<p class="subtitle">Vom Kunden scannen lassen:</p>' +
+      '<div class="qrcard"><canvas id="qr-canvas"></canvas></div>' +
+      '<p class="serial"></p>' +
+      '<button class="primary" id="is-again">Weitere Karte ausgeben</button>' +
+      '<div style="margin-top:12px"><button class="linkbtn muted" id="is-done">Fertig</button></div>' +
+      '</div>';
+    body.querySelector(".serial").textContent = data.serial;
+    QRCode.toCanvas($("qr-canvas"), data.url, { width: 220, margin: 1 }, function(err){ if (err) console.error(err); });
+    $("is-again").addEventListener("click", openIssue);
+    $("is-done").addEventListener("click", function(){ goScanner($("sc-org").textContent); });
+  }
+
+  if ("serviceWorker" in navigator){
+    window.addEventListener("load", function(){
+      navigator.serviceWorker.register("/sw.js").catch(function(){});
+    });
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
