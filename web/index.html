@@ -329,16 +329,18 @@
   function openScanner(){
     $("sc-org").textContent = orgName;
     hideSheet();
-    $("sc-start").classList.remove("hidden");
     $("sc-torch").classList.add("hidden");
     show("s-scanner");
+    // Direkt starten: der Tap auf "Karte stempeln" ist die nötige Nutzer-Geste.
+    startScanner();
   }
 
   $("sc-back").addEventListener("click", async function(){ await stopScanner(); show("s-home"); });
 
-  $("sc-start").addEventListener("click", async function(){
+  async function startScanner(){
     if (scanning) return;
-    this.disabled = true; this.textContent = "Kamera wird gestartet…";
+    var btn = $("sc-start");
+    btn.disabled = true; btn.textContent = "Kamera wird gestartet…"; btn.classList.add("hidden");
     try {
       scanner = new Html5Qrcode("reader");
       await scanner.start(
@@ -347,17 +349,19 @@
         onScan, function(){}
       );
       scanning = true;
-      this.classList.add("hidden");
       // Blitz nur zeigen, wenn das Gerät es kann.
       try {
         var caps = scanner.getRunningTrackCapabilities();
         if (caps && caps.torch) $("sc-torch").classList.remove("hidden");
       } catch(e){}
     } catch(e){
-      this.disabled = false; this.textContent = "Scanner starten";
-      alert("Kamera nicht verfügbar. Bitte Kamera-Zugriff erlauben.");
+      scanning = false;
+      // Fallback: Knopf zeigen, falls Auto-Start scheitert (z. B. Kamera-Zugriff abgelehnt).
+      btn.disabled = false; btn.textContent = "Scanner starten"; btn.classList.remove("hidden");
     }
-  });
+  }
+
+  $("sc-start").addEventListener("click", function(){ startScanner(); });
 
   var torchOn = false;
   $("sc-torch").addEventListener("click", async function(){
