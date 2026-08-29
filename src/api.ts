@@ -9,14 +9,15 @@ import { Platform } from 'react-native'
  */
 // Öffentliche Backend-Adresse (Vercel) — wird im ECHTEN App-Build (TestFlight/Store) genutzt.
 const PROD_URL = 'https://stemply-xi.vercel.app'
-// Nur für lokale Entwicklung (Expo Go am Handy): die LAN-IP deines PCs im gleichen WLAN.
-const DEV_LAN_IP = 'http://10.18.95.25:3000'
+// Für Expo Go/Emulator: nutze die erreichbare Backend-Adresse.
+// Lokales Backend wäre im Android-Emulator z.B. http://10.0.2.2:3000.
+const DEV_URL = PROD_URL
 
 // __DEV__ ist true beim `expo start`/Expo Go, und automatisch false im gebauten Release.
 export const API_BASE_URL = __DEV__
   ? Platform.OS === 'web'
     ? 'http://localhost:3000'
-    : DEV_LAN_IP
+    : DEV_URL
   : PROD_URL
 
 export interface ApiResult<T> {
@@ -24,6 +25,14 @@ export interface ApiResult<T> {
   status: number
   data: T | null
   error: string | null
+  /**
+   * Maschinenlesbarer Grund einer Ablehnung, wie ihn das Backend mitschickt
+   * ('card_deleted', 'not_found', 'forbidden', 'full', 'cooldown', 'rate_limited', …).
+   *
+   * Der Text allein reicht der Kasse nicht: „gelöscht" heißt „hör auf zu scannen", „gerade
+   * eben gestempelt" heißt „warte kurz". Das darf die App nicht am Wortlaut festmachen.
+   */
+  code: string | null
 }
 
 async function request<T>(
@@ -52,9 +61,16 @@ async function request<T>(
       status: res.status,
       data: res.ok ? (json as T) : null,
       error: res.ok ? null : (json?.error ?? `Fehler ${res.status}`),
+      code: res.ok ? null : (typeof json?.code === 'string' ? json.code : null),
     }
   } catch {
-    return { ok: false, status: 0, data: null, error: 'Keine Verbindung zum Server.' }
+    return {
+      ok: false,
+      status: 0,
+      data: null,
+      error: 'Keine Verbindung zum Server.',
+      code: 'offline',
+    }
   }
 }
 
@@ -74,17 +90,32 @@ export interface StampResponse {
   serial: string
   stamps: number
   stampGoal: number
+  /** Wirklich gebuchte Stempel — am Kartenziel gedeckelt, kann unter der Anfrage liegen. */
+  booked: number
   completesCard: boolean
 }
+
+/** Mehr als das ist an der Kasse ein Vertipper; der Server deckelt genauso. */
+export const MAX_STAMPS_PER_BOOKING = 10
 export interface CardOption {
   id: string
   name: string
   programName: string
   stampGoal: number
   isPublished: boolean
+  /** Ob der Ausgabe-Link dieser Karte schon existiert; sonst entsteht er beim ersten Mal. */
+  hasHandout: boolean
 }
-export interface IssueResponse {
-  serial: string
+
+/**
+ * Der Ausgabe-QR einer Karte.
+ *
+ * `url` zeigt auf `/k/<code>` — die Seite, die dem Telefon des Kunden seinen eigenen Pass
+ * baut und Apple und Google Wallet anbietet. Derselbe Link steckt auf den NFC-Chips.
+ */
+export interface HandoutResponse {
+  cardId: string
+  cardName: string
   url: string
   stampGoal: number
 }
@@ -95,10 +126,10 @@ export const api = {
   me: (token: string) => request<MeResponse>('/api/app/me', 'GET', undefined, token),
   changePassword: (token: string, newPassword: string) =>
     request<{ ok: boolean }>('/api/app/change-password', 'POST', { newPassword }, token),
-  stamp: (token: string, scanned: string) =>
-    request<StampResponse>('/api/app/stamp', 'POST', { scanned }, token),
+  stamp: (token: string, scanned: string, count = 1) =>
+    request<StampResponse>('/api/app/stamp', 'POST', { scanned, count }, token),
   listCards: (token: string) =>
     request<{ cards: CardOption[] }>('/api/app/cards', 'GET', undefined, token),
   issueCard: (token: string, cardId: string) =>
-    request<IssueResponse>('/api/app/cards/issue', 'POST', { cardId }, token),
+    request<HandoutResponse>('/api/app/cards/issue', 'POST', { cardId }, token),
 }
