@@ -10,8 +10,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black" />
 <meta name="apple-mobile-web-app-title" content="Stampie" />
-<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; height: 100%; }
@@ -508,12 +508,16 @@
     body.innerHTML =
       '<div class="qrbox">' +
       '<p class="subtitle">Vom Kunden scannen lassen:</p>' +
-      '<div class="qrcard"><canvas id="qr-canvas"></canvas></div>' +
+      '<div class="qrcard" id="qr-box"></div>' +
       '<p class="qrcap">Der Kunde legt die Karte damit selbst in sein Wallet — ' + (data.stampGoal || "") + ' Stempel bis zur Belohnung. Der Code bleibt gültig und kann für den nächsten Kunden stehen bleiben.</p>' +
       '<button class="primary" id="is-again">Andere Karte wählen</button>' +
       '<div style="margin-top:12px"><button class="linkbtn muted" id="is-done">Fertig</button></div>' +
       '</div>';
-    QRCode.toCanvas($("qr-canvas"), data.url, { width: 220, margin: 1 }, function(err){ if (err) console.error(err); });
+    try {
+      var qbox = $("qr-box");
+      qbox.innerHTML = "";
+      new QRCode(qbox, { text: data.url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });
+    } catch(e){ console.error(e); $("qr-box").textContent = data.url; }
     $("is-again").addEventListener("click", function(){ issuedShown = false; openIssue(); });
     $("is-done").addEventListener("click", async function(){ issuedShown = false; show("s-home"); });
   }
