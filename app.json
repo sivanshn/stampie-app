@@ -3,12 +3,12 @@
     "name": "Stampie",
     "slug": "stampie-app",
     "version": "1.0.0",
+    "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "ios": {
       "bundleIdentifier": "de.stampie.app",
-      "supportsTablet": true,
+      "supportsTablet": false,
       "infoPlist": {
         "NSCameraUsageDescription": "Zum Scannen der Kunden-QR-Codes wird die Kamera benötigt.",
         "ITSAppUsesNonExemptEncryption": false
@@ -30,12 +30,15 @@
         }
       ],
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      "expo-secure-store",
+      "expo-status-bar"
     ],
     "extra": {
       "eas": {
-        "projectId": "b7c28e81-5f74-4594-b5fc-769bf253d9e5"
+        "projectId": "e77d158c-4b5e-4bd0-9b1b-4b9013972171"
       }
-    }
+    },
+    "owner": "mou123zuv"
   }
 }
