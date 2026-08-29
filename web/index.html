@@ -297,8 +297,7 @@
     issueCard: function(cardId){ return apiFetch("/api/app/cards/issue","POST",{cardId:cardId},true); },
     listReminders: function(){ return apiFetch("/api/app/reminders","GET",null,true); },
     createReminder: function(payload){ return apiFetch("/api/app/reminders","POST",payload,true); },
-    deleteReminder: function(id){ return apiFetch("/api/app/reminders/delete","POST",{id:id},true); },
-    testReminder: function(id){ return apiFetch("/api/app/reminders/test","POST",{id:id},true); }
+    deleteReminder: function(id){ return apiFetch("/api/app/reminders/delete","POST",{id:id},true); }
   };
 
   // Klare Ansagen anhand des maschinenlesbaren Codes (wie in der nativen App).
@@ -632,10 +631,7 @@
       el.className = "ntrow";
       var next = r.nextSendAt ? new Date(r.nextSendAt).toLocaleDateString("de-DE") : "";
       el.innerHTML = '<div class="ntcard"></div><div class="ntmeta"></div><div class="nttext"></div>' +
-        '<div style="display:flex; gap:18px; align-items:center; margin-top:8px">' +
-        '<button class="linkbtn nttest">Jetzt testen</button>' +
-        '<button class="linkbtn ntdel" style="color:#c0392b">Löschen</button>' +
-        '</div><div class="nttest-res" style="font-size:12px; color:#666; margin-top:6px"></div>';
+        '<button class="linkbtn ntdel" style="color:#c0392b; margin-top:8px">Löschen</button>';
       el.querySelector(".ntcard").textContent = r.cardName;
       el.querySelector(".ntmeta").textContent = fmtInterval(r.intervalMinutes) + " · nächste: " + next;
       el.querySelector(".nttext").textContent = (r.headline ? (r.headline + " — ") : "") + r.body;
@@ -643,23 +639,6 @@
         this.disabled = true; this.textContent = "Lösche…";
         var d = await api.deleteReminder(r.id);
         if (d.ok) loadReminders(); else { this.disabled = false; this.textContent = "Löschen"; }
-      });
-      el.querySelector(".nttest").addEventListener("click", async function(){
-        var out = el.querySelector(".nttest-res");
-        this.disabled = true; this.textContent = "Sende…"; out.textContent = "";
-        var res = await api.testReminder(r.id);
-        this.disabled = false; this.textContent = "Jetzt testen";
-        if (!res.ok){ out.style.color = "#c0392b"; out.textContent = res.error || "Fehler beim Senden."; return; }
-        var g = res.googleStatus;
-        var gtxt = g === "updated" ? "Google: gesendet" : g === "not_configured" ? "Google: nicht eingerichtet" : g === "not_found" ? "Google: keine Karte" : g === "skipped" ? "" : ("Google: " + g);
-        var apple = "Apple: " + (res.appleDevices || 0) + " Geräte";
-        if ((res.appleDevices || 0) === 0 && g !== "updated"){
-          out.style.color = "#c0392b";
-          out.textContent = "Verschickt, aber niemand erreicht (" + apple + ", " + (gtxt||"Google: -") + "). Ist die Karte in deinem Wallet? Sind am Server die Wallet-Zugangsdaten gesetzt?";
-        } else {
-          out.style.color = "#1e8e3e";
-          out.textContent = "Gesendet ✓ — " + apple + (gtxt ? (" · " + gtxt) : "");
-        }
       });
       list.appendChild(el);
     });
