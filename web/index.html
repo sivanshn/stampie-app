@@ -207,7 +207,7 @@
       <span style="width:60px"></span>
     </div>
     <div class="pad">
-      <p class="subtitle">Automatische Erinnerung, die alle X Tage an alle Kunden einer Karte geht.</p>
+      <p class="subtitle">Automatische Erinnerung an Kunden, die seit der eingestellten Zeit nicht mehr da waren — und danach immer wieder, bis sie zurückkommen. Wer wiederkommt, fällt raus.</p>
 
       <label class="ntlabel">Karte</label>
       <select id="nt-card" class="ntinput"></select>
@@ -219,7 +219,7 @@
       <textarea id="nt-text" class="ntinput" maxlength="150" rows="3" placeholder="Zeit für einen neuen Haarschnitt ✂️"></textarea>
       <div class="ntcount"><span id="nt-count">0</span>/150</div>
 
-      <label class="ntlabel">Wie oft senden?</label>
+      <label class="ntlabel">Erinnern, wenn so lange nicht da:</label>
       <div style="display:flex; gap:8px">
         <input id="nt-every" class="ntinput" style="flex:1" type="number" min="1" value="20" inputmode="numeric" />
         <select id="nt-unit" class="ntinput" style="flex:1">
@@ -587,10 +587,10 @@
   $("nt-back").addEventListener("click", function(){ show("s-home"); });
   $("nt-text").addEventListener("input", function(){ $("nt-count").textContent = this.value.length; });
 
-  function fmtInterval(min){
-    if (min % 1440 === 0){ var d = min / 1440; return "alle " + d + (d === 1 ? " Tag" : " Tage"); }
-    if (min % 60 === 0){ var h = min / 60; return "alle " + h + (h === 1 ? " Stunde" : " Stunden"); }
-    return "alle " + min + (min === 1 ? " Minute" : " Minuten");
+  function fmtThreshold(min){
+    if (min % 1440 === 0){ var d = min / 1440; return d + (d === 1 ? " Tag" : " Tage"); }
+    if (min % 60 === 0){ var h = min / 60; return h + (h === 1 ? " Stunde" : " Stunden"); }
+    return min + (min === 1 ? " Minute" : " Minuten");
   }
 
   async function openNotify(){
@@ -629,11 +629,10 @@
     rows.forEach(function(r){
       var el = document.createElement("div");
       el.className = "ntrow";
-      var next = r.nextSendAt ? new Date(r.nextSendAt).toLocaleDateString("de-DE") : "";
       el.innerHTML = '<div class="ntcard"></div><div class="ntmeta"></div><div class="nttext"></div>' +
         '<button class="linkbtn ntdel" style="color:#c0392b; margin-top:8px">Löschen</button>';
       el.querySelector(".ntcard").textContent = r.cardName;
-      el.querySelector(".ntmeta").textContent = fmtInterval(r.intervalMinutes) + " · nächste: " + next;
+      el.querySelector(".ntmeta").textContent = "wenn " + fmtThreshold(r.intervalMinutes) + " nicht da" + (r.enabled ? "" : " · aus");
       el.querySelector(".nttext").textContent = (r.headline ? (r.headline + " — ") : "") + r.body;
       el.querySelector(".ntdel").addEventListener("click", async function(){
         this.disabled = true; this.textContent = "Lösche…";
