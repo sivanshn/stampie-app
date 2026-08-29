@@ -1,0 +1,28 @@
+name: Reminder Ping (Test)
+
+# Stößt den Versand-Endpunkt des Backends regelmäßig an, damit fällige Erinnerungen und
+# geplante Nachrichten verschickt werden. Nötig, weil Vercels kostenloser Cron nur 1×/Tag
+# läuft. Zum Testen alle 5 Minuten.
+#
+# Voraussetzung: Repo-Secret CRON_SECRET (Settings -> Secrets and variables -> Actions),
+# Wert = derselbe CRON_SECRET, der im Backend (Vercel) gesetzt ist.
+#
+# Zum Abschalten: diesen Workflow im Reiter "Actions" deaktivieren oder die Datei löschen.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *' # alle 5 Minuten (GitHub-Minimum; kann sich um ein paar Minuten verzögern)
+  workflow_dispatch: {} # zusätzlich manuell auslösbar
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cron-Endpunkt anstoßen
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://stemply-xi.vercel.app/api/cron/messages)
+          echo "Antwort: HTTP $code"
+          # Job nie scheitern lassen (kein Fehler-Spam) — 200 heißt gesendet, 401/503 heißt
+          # Secret bzw. CRON_SECRET am Server prüfen.
