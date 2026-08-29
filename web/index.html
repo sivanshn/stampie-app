@@ -92,6 +92,19 @@
   .qrcard { display: inline-block; background: #fff; padding: 20px; border-radius: 16px; margin: 14px 0; }
   .qrcap { font-size: 13px; color: #666; max-width: 320px; margin: 0 auto 14px; }
 
+  /* Benachrichtigungen */
+  .ntlabel { display: block; font-size: 13px; color: #666; margin: 14px 0 6px; }
+  .ntinput { width: 100%; border: 1px solid #ddd; border-radius: 10px; padding: 12px 14px; font-size: 16px; background: #fff; outline: none; font-family: inherit; }
+  .ntinput:focus { border-color: #1a1a1a; }
+  textarea.ntinput { resize: vertical; }
+  .ntcount { text-align: right; font-size: 12px; color: #999; margin-top: 4px; }
+  .ntsub { font-size: 15px; font-weight: 700; margin: 24px 0 10px; }
+  .ntrow { background: #fff; border: 1px solid #eee; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+  .ntrow .ntcard { font-size: 15px; font-weight: 600; }
+  .ntrow .ntmeta { font-size: 13px; color: #888; margin-top: 2px; }
+  .ntrow .nttext { font-size: 14px; color: #333; margin-top: 6px; }
+  .ntrow .ntdel { margin-top: 8px; }
+
   .hidden { display: none !important; }
   .spinner { width: 28px; height: 28px; border: 3px solid #ccc; border-top-color: #1a1a1a; border-radius: 50%; animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -139,6 +152,7 @@
       <div class="homeActions">
         <button class="homeBtn pri" id="h-stamp">Karte stempeln</button>
         <button class="homeBtn sec" id="h-issue">Karte ausgeben</button>
+        <button class="homeBtn sec" id="h-notify">Benachrichtigungen</button>
       </div>
       <div class="homeLegal"><button class="linkbtn muted" id="h-legal">Datenschutz &amp; Hilfe</button></div>
     </div>
@@ -183,6 +197,37 @@
       <span style="width:60px"></span>
     </div>
     <div id="is-body" class="pad"><div class="center"><div class="spinner"></div></div></div>
+  </section>
+
+  <!-- BENACHRICHTIGUNGEN -->
+  <section id="s-notify" class="screen">
+    <div class="header">
+      <button class="linkbtn" id="nt-back">‹ Zurück</button>
+      <span class="title">Benachrichtigungen</span>
+      <span style="width:60px"></span>
+    </div>
+    <div class="pad">
+      <p class="subtitle">Automatische Erinnerung, die alle X Tage an alle Kunden einer Karte geht.</p>
+
+      <label class="ntlabel">Karte</label>
+      <select id="nt-card" class="ntinput"></select>
+
+      <label class="ntlabel">Überschrift (optional)</label>
+      <input id="nt-headline" class="ntinput" maxlength="60" placeholder="z. B. Zeit für einen Besuch" />
+
+      <label class="ntlabel">Text</label>
+      <textarea id="nt-text" class="ntinput" maxlength="150" rows="3" placeholder="Zeit für einen neuen Haarschnitt ✂️"></textarea>
+      <div class="ntcount"><span id="nt-count">0</span>/150</div>
+
+      <label class="ntlabel">Alle wie viele Tage senden?</label>
+      <input id="nt-days" class="ntinput" type="number" min="1" max="365" value="20" inputmode="numeric" />
+
+      <div class="error" id="nt-error"></div>
+      <button class="primary" id="nt-save">Speichern</button>
+
+      <h3 class="ntsub">Aktive Erinnerungen</h3>
+      <div id="nt-list"><div class="center" style="min-height:60px"><div class="spinner"></div></div></div>
+    </div>
   </section>
 
 </div>
@@ -241,7 +286,10 @@
     changePassword: function(pw){ return apiFetch("/api/app/change-password","POST",{newPassword:pw},true); },
     stamp: function(scanned,count){ return apiFetch("/api/app/stamp","POST",{scanned:scanned,count:count||1},true); },
     listCards: function(){ return apiFetch("/api/app/cards","GET",null,true); },
-    issueCard: function(cardId){ return apiFetch("/api/app/cards/issue","POST",{cardId:cardId},true); }
+    issueCard: function(cardId){ return apiFetch("/api/app/cards/issue","POST",{cardId:cardId},true); },
+    listReminders: function(){ return apiFetch("/api/app/reminders","GET",null,true); },
+    createReminder: function(payload){ return apiFetch("/api/app/reminders","POST",payload,true); },
+    deleteReminder: function(id){ return apiFetch("/api/app/reminders/delete","POST",{id:id},true); }
   };
 
   // Klare Ansagen anhand des maschinenlesbaren Codes (wie in der nativen App).
@@ -320,6 +368,7 @@
   $("h-logout").addEventListener("click", function(){ delToken(); show("s-login"); });
   $("h-stamp").addEventListener("click", function(){ openScanner(); });
   $("h-issue").addEventListener("click", function(){ openIssue(); });
+  $("h-notify").addEventListener("click", function(){ openNotify(); });
   $("h-legal").addEventListener("click", function(){ show("s-legal"); });
   $("lg-back").addEventListener("click", function(){ show("s-home"); });
 
@@ -525,6 +574,79 @@
     $("is-again").addEventListener("click", function(){ issuedShown = false; openIssue(); });
     $("is-done").addEventListener("click", async function(){ issuedShown = false; show("s-home"); });
   }
+
+  // ---- Benachrichtigungen ----
+  $("nt-back").addEventListener("click", function(){ show("s-home"); });
+  $("nt-text").addEventListener("input", function(){ $("nt-count").textContent = this.value.length; });
+
+  async function openNotify(){
+    show("s-notify");
+    $("nt-error").textContent = "";
+    var sel = $("nt-card");
+    sel.innerHTML = '<option>Lädt…</option>';
+    var cardsRes = await api.listCards();
+    if (!cardsRes.ok || !cardsRes.data){
+      sel.innerHTML = '<option value="">Karten konnten nicht geladen werden</option>';
+    } else {
+      var cards = cardsRes.data.cards || [];
+      if (cards.length === 0){
+        sel.innerHTML = '<option value="">Noch keine Karte angelegt</option>';
+      } else {
+        sel.innerHTML = "";
+        cards.forEach(function(c){
+          var o = document.createElement("option");
+          o.value = c.id;
+          o.textContent = (c.programName || c.name) + (c.isPublished ? "" : " (Entwurf)");
+          sel.appendChild(o);
+        });
+      }
+    }
+    loadReminders();
+  }
+
+  async function loadReminders(){
+    var list = $("nt-list");
+    list.innerHTML = '<div class="center" style="min-height:60px"><div class="spinner"></div></div>';
+    var res = await api.listReminders();
+    if (!res.ok || !res.data){ list.innerHTML = '<p class="error">' + (res.error || "Konnte nicht geladen werden.") + '</p>'; return; }
+    var rows = res.data.reminders || [];
+    if (rows.length === 0){ list.innerHTML = '<p class="subtitle">Noch keine Erinnerung angelegt.</p>'; return; }
+    list.innerHTML = "";
+    rows.forEach(function(r){
+      var el = document.createElement("div");
+      el.className = "ntrow";
+      var next = r.nextSendAt ? new Date(r.nextSendAt).toLocaleDateString("de-DE") : "";
+      el.innerHTML = '<div class="ntcard"></div><div class="ntmeta"></div><div class="nttext"></div>' +
+        '<button class="linkbtn ntdel" style="color:#c0392b">Löschen</button>';
+      el.querySelector(".ntcard").textContent = r.cardName;
+      el.querySelector(".ntmeta").textContent = "Alle " + r.intervalDays + " Tage · nächste: " + next;
+      el.querySelector(".nttext").textContent = (r.headline ? (r.headline + " — ") : "") + r.body;
+      el.querySelector(".ntdel").addEventListener("click", async function(){
+        this.disabled = true; this.textContent = "Lösche…";
+        var d = await api.deleteReminder(r.id);
+        if (d.ok) loadReminders(); else { this.disabled = false; this.textContent = "Löschen"; }
+      });
+      list.appendChild(el);
+    });
+  }
+
+  $("nt-save").addEventListener("click", async function(){
+    var btn = this;
+    $("nt-error").textContent = "";
+    var cardId = $("nt-card").value;
+    var body = $("nt-text").value.trim();
+    var headline = $("nt-headline").value.trim();
+    var days = parseInt($("nt-days").value, 10);
+    if (!cardId){ $("nt-error").textContent = "Bitte eine Karte wählen."; return; }
+    if (!body){ $("nt-error").textContent = "Bitte einen Text eingeben."; return; }
+    if (!days || days < 1 || days > 365){ $("nt-error").textContent = "Bitte 1–365 Tage angeben."; return; }
+    btn.disabled = true; btn.textContent = "Speichert…";
+    var res = await api.createReminder({ cardId: cardId, headline: headline || null, body: body, intervalDays: days });
+    btn.disabled = false; btn.textContent = "Speichern";
+    if (!res.ok){ $("nt-error").textContent = res.error || "Konnte nicht gespeichert werden."; return; }
+    $("nt-text").value = ""; $("nt-headline").value = ""; $("nt-count").textContent = "0";
+    loadReminders();
+  });
 
   // ---- service worker ----
   if ("serviceWorker" in navigator){
