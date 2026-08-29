@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  Linking,
   Platform,
   Modal,
+  ScrollView,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -21,6 +23,7 @@ import {
   type HandoutResponse,
 } from './src/api'
 import { tokenStore } from './src/storage'
+import { PRIVACY_POLICY_URL, SUPPORT_URL } from './src/appLinks'
 
 const TOKEN_KEY = 'stampie_token'
 
@@ -35,6 +38,7 @@ type Screen =
 export default function App() {
   const [token, setToken] = useState<string | null>(null)
   const [screen, setScreen] = useState<Screen>({ name: 'boot' })
+  const [showLegalAndHelp, setShowLegalAndHelp] = useState(false)
 
   // Beim Start: gespeicherten Token laden und prüfen.
   useEffect(() => {
@@ -84,12 +88,14 @@ export default function App() {
   return (
     <SafeAreaView style={[styles.safe, screen.name === 'scanner' && styles.safeScanner]}>
       <StatusBar style={screen.name === 'scanner' ? 'light' : 'dark'} />
-      {screen.name === 'boot' ? (
+      {showLegalAndHelp ? (
+        <LegalAndHelpScreen onBack={() => setShowLegalAndHelp(false)} />
+      ) : screen.name === 'boot' ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#1a1a1a" />
         </View>
       ) : screen.name === 'login' ? (
-        <LoginScreen onLoggedIn={onLoggedIn} />
+        <LoginScreen onLoggedIn={onLoggedIn} onShowLegalAndHelp={() => setShowLegalAndHelp(true)} />
       ) : screen.name === 'change' ? (
         <ChangePasswordScreen token={token!} onDone={onPasswordChanged} />
       ) : screen.name === 'home' ? (
@@ -98,6 +104,7 @@ export default function App() {
           onLogout={onLogout}
           onStamp={() => setScreen({ name: 'scanner', orgName: screen.orgName })}
           onIssue={() => setScreen({ name: 'issue', orgName: screen.orgName })}
+          onShowLegalAndHelp={() => setShowLegalAndHelp(true)}
         />
       ) : screen.name === 'issue' ? (
         <IssueScreen
@@ -117,8 +124,10 @@ export default function App() {
 
 function LoginScreen({
   onLoggedIn,
+  onShowLegalAndHelp,
 }: {
   onLoggedIn: (token: string, mustChange: boolean) => void
+  onShowLegalAndHelp: () => void
 }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -167,6 +176,63 @@ function LoginScreen({
       >
         {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Anmelden</Text>}
       </TouchableOpacity>
+      <TouchableOpacity style={styles.legalLink} onPress={onShowLegalAndHelp}>
+        <Text style={styles.legalLinkText}>Datenschutz &amp; Hilfe</Text>
+      </TouchableOpacity>
+    </View>
+  )
+}
+
+/** Die Hinweise sind ohne Anmeldung erreichbar, wie Apple es für Datenschutz verlangt. */
+function LegalAndHelpScreen({ onBack }: { onBack: () => void }) {
+  const [linkError, setLinkError] = useState<string | null>(null)
+
+  const open = async (url: string) => {
+    setLinkError(null)
+    try {
+      const supported = await Linking.canOpenURL(url)
+      if (!supported) throw new Error('unsupported')
+      await Linking.openURL(url)
+    } catch {
+      setLinkError('Die Seite konnte nicht geöffnet werden. Bitte später erneut versuchen.')
+    }
+  }
+
+  return (
+    <View style={styles.legalWrap}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={onBack} accessibilityRole="button" accessibilityLabel="Zurück">
+          <Text style={styles.headerAction}>‹ Zurück</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Datenschutz &amp; Hilfe</Text>
+        <View style={{ width: 60 }} />
+      </View>
+      <ScrollView contentContainerStyle={styles.legalContent}>
+        <Text style={styles.legalTitle}>Datenschutz auf einen Blick</Text>
+        <Text style={styles.legalText}>
+          Stampie ist eine Betriebs-App zum Ausgeben und Stempeln von Kundenkarten. Die
+          Kamera wird ausschließlich zum Lesen von QR-Codes verwendet; die App speichert
+          keine Kamerabilder oder Videos.
+        </Text>
+        <Text style={styles.legalText}>
+          Für die Anmeldung verarbeitet Stampie die Zugangsdaten des Betriebs. Der
+          Anmelde-Token wird geschützt auf diesem Gerät gespeichert. Beim Stempeln wird
+          der gelesene QR-Code zur Buchung an den Stampie-Server übertragen.
+        </Text>
+        <Text style={styles.legalText}>
+          Vollständige Angaben zu Verantwortlichen, Datenarten, Empfängern,
+          Aufbewahrungsfristen sowie Auskunfts-, Berichtigungs- und Löschanfragen stehen
+          in der öffentlichen Datenschutzerklärung.
+        </Text>
+
+        <TouchableOpacity style={styles.button} onPress={() => void open(PRIVACY_POLICY_URL)}>
+          <Text style={styles.buttonText}>Datenschutzerklärung öffnen</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.secondaryButton} onPress={() => void open(SUPPORT_URL)}>
+          <Text style={styles.secondaryButtonText}>Hilfe &amp; Support öffnen</Text>
+        </TouchableOpacity>
+        {linkError ? <Text style={styles.error}>{linkError}</Text> : null}
+      </ScrollView>
     </View>
   )
 }
@@ -270,11 +336,13 @@ function HomeScreen({
   onLogout,
   onStamp,
   onIssue,
+  onShowLegalAndHelp,
 }: {
   orgName: string
   onLogout: () => void
   onStamp: () => void
   onIssue: () => void
+  onShowLegalAndHelp: () => void
 }) {
   return (
     <View style={styles.homeWrap}>
@@ -296,6 +364,9 @@ function HomeScreen({
           <Text style={styles.homeSecondaryText}>Karte ausgeben</Text>
         </TouchableOpacity>
       </View>
+      <TouchableOpacity style={styles.homeLegalLink} onPress={onShowLegalAndHelp}>
+        <Text style={styles.legalLinkText}>Datenschutz &amp; Hilfe</Text>
+      </TouchableOpacity>
     </View>
   )
 }
@@ -648,6 +719,10 @@ const styles = StyleSheet.create({
   safeScanner: { backgroundColor: '#000', paddingTop: 0 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   form: { flex: 1, padding: 24, justifyContent: 'center', gap: 12 },
+  legalWrap: { flex: 1, backgroundColor: '#f5f5f4' },
+  legalContent: { padding: 24, gap: 14, paddingBottom: 40 },
+  legalTitle: { fontSize: 24, fontWeight: '700', color: '#1a1a1a' },
+  legalText: { fontSize: 16, lineHeight: 23, color: '#444' },
   title: { fontSize: 28, fontWeight: '700', color: '#1a1a1a' },
   subtitle: { fontSize: 15, color: '#666', marginBottom: 12 },
   input: {
@@ -668,6 +743,16 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: '#bbb',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  secondaryButtonText: { color: '#1a1a1a', fontSize: 16, fontWeight: '600' },
+  legalLink: { alignItems: 'center', paddingVertical: 8 },
+  legalLinkText: { color: '#555', fontSize: 14, textDecorationLine: 'underline' },
   error: { color: '#c0392b', fontSize: 14 },
   homeWrap: {
     flex: 1,
@@ -682,6 +767,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   homeActions: { flex: 1, justifyContent: 'center', gap: 14 },
+  homeLegalLink: { alignItems: 'center', paddingVertical: 8 },
   homePrimaryButton: {
     backgroundColor: '#1a1a1a',
     borderRadius: 12,

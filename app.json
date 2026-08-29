@@ -3,11 +3,12 @@
     "name": "Stampie",
     "slug": "stampie-app",
     "version": "1.0.0",
+    "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "de.stampie.app",
-      "supportsTablet": true,
+      "supportsTablet": false,
       "infoPlist": {
         "NSCameraUsageDescription": "Zum Scannen der Kunden-QR-Codes wird die Kamera benötigt.",
         "ITSAppUsesNonExemptEncryption": false
