@@ -219,8 +219,16 @@
       <textarea id="nt-text" class="ntinput" maxlength="150" rows="3" placeholder="Zeit für einen neuen Haarschnitt ✂️"></textarea>
       <div class="ntcount"><span id="nt-count">0</span>/150</div>
 
-      <label class="ntlabel">Alle wie viele Tage senden?</label>
-      <input id="nt-days" class="ntinput" type="number" min="1" max="365" value="20" inputmode="numeric" />
+      <label class="ntlabel">Wie oft senden?</label>
+      <div style="display:flex; gap:8px">
+        <input id="nt-every" class="ntinput" style="flex:1" type="number" min="1" value="20" inputmode="numeric" />
+        <select id="nt-unit" class="ntinput" style="flex:1">
+          <option value="minutes">Minuten</option>
+          <option value="hours">Stunden</option>
+          <option value="days" selected>Tage</option>
+        </select>
+      </div>
+      <p class="qrcap" style="margin:6px 0 0; text-align:left">Zum Testen z. B. „5 Minuten". Hinweis: wirklich verschickt wird nur, wenn der Server-Auslöser so oft läuft (siehe Chat).</p>
 
       <div class="error" id="nt-error"></div>
       <button class="primary" id="nt-save">Speichern</button>
@@ -579,6 +587,12 @@
   $("nt-back").addEventListener("click", function(){ show("s-home"); });
   $("nt-text").addEventListener("input", function(){ $("nt-count").textContent = this.value.length; });
 
+  function fmtInterval(min){
+    if (min % 1440 === 0){ var d = min / 1440; return "alle " + d + (d === 1 ? " Tag" : " Tage"); }
+    if (min % 60 === 0){ var h = min / 60; return "alle " + h + (h === 1 ? " Stunde" : " Stunden"); }
+    return "alle " + min + (min === 1 ? " Minute" : " Minuten");
+  }
+
   async function openNotify(){
     show("s-notify");
     $("nt-error").textContent = "";
@@ -619,7 +633,7 @@
       el.innerHTML = '<div class="ntcard"></div><div class="ntmeta"></div><div class="nttext"></div>' +
         '<button class="linkbtn ntdel" style="color:#c0392b">Löschen</button>';
       el.querySelector(".ntcard").textContent = r.cardName;
-      el.querySelector(".ntmeta").textContent = "Alle " + r.intervalDays + " Tage · nächste: " + next;
+      el.querySelector(".ntmeta").textContent = fmtInterval(r.intervalMinutes) + " · nächste: " + next;
       el.querySelector(".nttext").textContent = (r.headline ? (r.headline + " — ") : "") + r.body;
       el.querySelector(".ntdel").addEventListener("click", async function(){
         this.disabled = true; this.textContent = "Lösche…";
@@ -636,12 +650,16 @@
     var cardId = $("nt-card").value;
     var body = $("nt-text").value.trim();
     var headline = $("nt-headline").value.trim();
-    var days = parseInt($("nt-days").value, 10);
+    var every = parseInt($("nt-every").value, 10);
+    var unit = $("nt-unit").value;
     if (!cardId){ $("nt-error").textContent = "Bitte eine Karte wählen."; return; }
     if (!body){ $("nt-error").textContent = "Bitte einen Text eingeben."; return; }
-    if (!days || days < 1 || days > 365){ $("nt-error").textContent = "Bitte 1–365 Tage angeben."; return; }
+    if (!every || every < 1){ $("nt-error").textContent = "Bitte eine gültige Zahl angeben."; return; }
+    var factor = unit === "minutes" ? 1 : (unit === "hours" ? 60 : 1440);
+    var intervalMinutes = every * factor;
+    if (intervalMinutes > 365 * 24 * 60){ $("nt-error").textContent = "Höchstens 365 Tage."; return; }
     btn.disabled = true; btn.textContent = "Speichert…";
-    var res = await api.createReminder({ cardId: cardId, headline: headline || null, body: body, intervalDays: days });
+    var res = await api.createReminder({ cardId: cardId, headline: headline || null, body: body, intervalMinutes: intervalMinutes });
     btn.disabled = false; btn.textContent = "Speichern";
     if (!res.ok){ $("nt-error").textContent = res.error || "Konnte nicht gespeichert werden."; return; }
     $("nt-text").value = ""; $("nt-headline").value = ""; $("nt-count").textContent = "0";
