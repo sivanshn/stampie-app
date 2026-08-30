@@ -22,7 +22,7 @@ jobs:
         run: |
           code=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            https://stemply-xi.vercel.app/api/cron/messages)
+            https://stampie-backend.vercel.app/api/cron/messages)
           echo "Antwort: HTTP $code"
           # Job nie scheitern lassen (kein Fehler-Spam) — 200 heißt gesendet, 401/503 heißt
           # Secret bzw. CRON_SECRET am Server prüfen.
