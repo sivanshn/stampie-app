@@ -8,7 +8,7 @@ import { Platform } from 'react-native'
  *   sie beim Start als "Network: http://X.X.X.X:3000" an. Handy + PC im gleichen WLAN.
  */
 // Öffentliche Backend-Adresse (Vercel) — wird im ECHTEN App-Build (TestFlight/Store) genutzt.
-const PROD_URL = 'https://stemply-xi.vercel.app'
+const PROD_URL = 'https://stampie-backend.vercel.app'
 // Für Expo Go/Emulator: nutze die erreichbare Backend-Adresse.
 // Lokales Backend wäre im Android-Emulator z.B. http://10.0.2.2:3000.
 const DEV_URL = PROD_URL

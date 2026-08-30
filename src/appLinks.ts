@@ -5,5 +5,5 @@
  * Website dieselben Ziele verwenden. Die Routen müssen auf dem Produktionsserver
  * ohne Anmeldung erreichbar sein.
  */
-export const PRIVACY_POLICY_URL = 'https://stemply-xi.vercel.app/datenschutz'
-export const SUPPORT_URL = 'https://stemply-xi.vercel.app/support'
+export const PRIVACY_POLICY_URL = 'https://stampie-backend.vercel.app/datenschutz'
+export const SUPPORT_URL = 'https://stampie-backend.vercel.app/support'
