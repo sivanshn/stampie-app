@@ -109,7 +109,12 @@
   .homeMenu { position: relative; }
   .menuBtn { background:none; border:none; font-size:22px; line-height:1; padding:6px 10px; cursor:pointer; color:#111; border-radius:8px; }
   .menuBtn:active { background:#eee; }
-  .menuDrop { position:absolute; right:0; top:46px; background:#fff; border:1px solid #e5e5e5; border-radius:16px; box-shadow:0 14px 40px rgba(0,0,0,.18); overflow:hidden; width:64vw; max-width:320px; min-width:230px; z-index:60; }
+  .drawerBackdrop { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:75; opacity:0; visibility:hidden; transition:opacity .25s ease, visibility .25s ease; }
+  .drawerBackdrop.open { opacity:1; visibility:visible; }
+  .drawer { position:fixed; top:0; right:0; height:100dvh; width:80vw; max-width:340px; background:#fff; box-shadow:-10px 0 40px rgba(0,0,0,.25); z-index:80; transform:translateX(100%); transition:transform .25s ease; display:flex; flex-direction:column; padding-top:env(safe-area-inset-top); }
+  .drawer.open { transform:translateX(0); }
+  .drawerHead { display:flex; align-items:center; justify-content:space-between; padding:20px 22px 12px; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:#999; }
+  .drawerClose { background:none; border:none; font-size:20px; color:#333; cursor:pointer; padding:4px 8px; line-height:1; }
   .menuItem { display:block; width:100%; text-align:left; background:none; border:none; padding:20px 22px; font-size:18px; font-weight:500; cursor:pointer; color:#111; }
   .menuItem:active { background:#f2f2f2; }
   .menuItem + .menuItem { border-top:1px solid #eee; }
@@ -171,10 +176,12 @@
         </div>
         <div class="homeMenu">
           <button class="menuBtn" id="h-menu-btn" aria-label="Menü" aria-haspopup="true">☰</button>
-          <div class="menuDrop hidden" id="h-menu" role="menu">
+          <div class="drawerBackdrop" id="h-backdrop"></div>
+          <aside class="drawer" id="h-menu" role="menu" aria-label="Menü">
+            <div class="drawerHead"><span>Menü</span><button class="drawerClose" id="h-menu-close" aria-label="Schließen">✕</button></div>
             <button class="menuItem" id="h-stats" role="menuitem">Statistiken</button>
             <button class="menuItem" id="h-logout" role="menuitem">Abmelden</button>
-          </div>
+          </aside>
         </div>
       </div>
       <div class="homeActions">
@@ -414,11 +421,12 @@
     $("h-org").textContent = orgName;
     show("s-home");
   }
-  // ---- menu (Hamburger) ----
-  function closeMenu(){ $("h-menu").classList.add("hidden"); }
-  $("h-menu-btn").addEventListener("click", function(e){ e.stopPropagation(); $("h-menu").classList.toggle("hidden"); });
-  $("h-menu").addEventListener("click", function(e){ e.stopPropagation(); });
-  document.addEventListener("click", closeMenu);
+  // ---- menu (Seiten-Drawer von rechts) ----
+  function openMenu(){ $("h-menu").classList.add("open"); $("h-backdrop").classList.add("open"); }
+  function closeMenu(){ $("h-menu").classList.remove("open"); $("h-backdrop").classList.remove("open"); }
+  $("h-menu-btn").addEventListener("click", function(e){ e.stopPropagation(); openMenu(); });
+  $("h-menu-close").addEventListener("click", closeMenu);
+  $("h-backdrop").addEventListener("click", closeMenu);
   $("h-logout").addEventListener("click", function(){ closeMenu(); delToken(); show("s-login"); });
   $("h-stats").addEventListener("click", function(){ closeMenu(); show("s-stats"); loadStats(); });
   $("h-stamp").addEventListener("click", function(){ openScanner(); });
