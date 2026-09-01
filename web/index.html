@@ -180,6 +180,7 @@
           <aside class="drawer" id="h-menu" role="menu" aria-label="Menü">
             <div class="drawerHead"><span>Menü</span><button class="drawerClose" id="h-menu-close" aria-label="Schließen">✕</button></div>
             <button class="menuItem" id="h-stats" role="menuitem">Statistiken</button>
+            <button class="menuItem" id="h-notify" role="menuitem">Benachrichtigungen</button>
             <button class="menuItem" id="h-logout" role="menuitem">Abmelden</button>
           </aside>
         </div>
@@ -187,7 +188,6 @@
       <div class="homeActions">
         <button class="homeBtn pri" id="h-stamp">Karte stempeln</button>
         <button class="homeBtn sec" id="h-issue">Karte ausgeben</button>
-        <button class="homeBtn sec" id="h-notify">Benachrichtigungen</button>
       </div>
       <div class="homeLegal"><button class="linkbtn muted" id="h-legal">Datenschutz &amp; Hilfe</button></div>
     </div>
@@ -431,7 +431,7 @@
   $("h-stats").addEventListener("click", function(){ closeMenu(); show("s-stats"); loadStats(); });
   $("h-stamp").addEventListener("click", function(){ openScanner(); });
   $("h-issue").addEventListener("click", function(){ openIssue(); });
-  $("h-notify").addEventListener("click", function(){ openNotify(); });
+  $("h-notify").addEventListener("click", function(){ closeMenu(); openNotify(); });
   $("h-legal").addEventListener("click", function(){ show("s-legal"); });
   $("lg-back").addEventListener("click", function(){ show("s-home"); });
   $("st-back").addEventListener("click", function(){ show("s-home"); });
