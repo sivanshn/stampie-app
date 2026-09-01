@@ -336,6 +336,7 @@
     listReminders: function(){ return apiFetch("/api/app/reminders","GET",null,true); },
     createReminder: function(payload){ return apiFetch("/api/app/reminders","POST",payload,true); },
     deleteReminder: function(id){ return apiFetch("/api/app/reminders/delete","POST",{id:id},true); },
+    pass: function(scanned){ return apiFetch("/api/app/pass?serial=" + encodeURIComponent(scanned),"GET",null,true); },
     stats: function(){ return apiFetch("/api/app/stats","GET",null,true); },
     saveStatsSettings: function(months){ return apiFetch("/api/app/stats/settings","POST",{inaktivNachMonaten:months},true); }
   };
@@ -636,13 +637,38 @@
     if (locked) return;
     locked = true;
     count = 1; curScanned = decodedText;
-    renderAsking();
+    // Erst den Stand holen, dann fragen. Bei einer vollen Karte ist "Wie viele Stempel?"
+    // die falsche Frage — da gehoert "Einloesen" hin.
+    renderLoadingPass();
+    api.pass(decodedText).then(function(r){
+      if (r.ok && r.data && r.data.full) renderRedeem(r.data);
+      else renderAsking();
+    });
   }
 
   function hideSheet(){ $("sc-sheet").classList.remove("show"); }
   function showSheet(){ $("sc-sheet").classList.add("show"); }
 
   function backToScanning(){ locked = false; count = 1; curScanned = null; hideSheet(); }
+
+  function renderLoadingPass(){
+    $("sc-sheetBody").innerHTML = '<div class="sheetTitle">Karte wird geprüft …</div>';
+    showSheet();
+  }
+
+  // Volle Karte: eine Aktion, kein Zaehler. Der Besuch von heute wird beim Einloesen
+  // gleich mitgestempelt, deshalb steht das auch dran.
+  function renderRedeem(d){
+    var body = $("sc-sheetBody");
+    body.innerHTML =
+      '<div class="sheetTitle">Karte ist voll — ' + d.stamps + '/' + d.stampGoal + '</div>' +
+      '<p class="subtitle">Belohnung herausgeben. Der heutige Besuch zählt gleich für die neue Karte.</p>' +
+      '<button class="primary" id="st-redeem">Belohnung einlösen</button>' +
+      '<button class="ghost" id="st-cancel">Abbrechen</button>';
+    $("st-redeem").addEventListener("click", function(){ book(); });
+    $("st-cancel").addEventListener("click", backToScanning);
+    showSheet();
+  }
 
   function renderAsking(){
     var body = $("sc-sheetBody");
@@ -695,13 +721,19 @@
     var res = await api.stamp(scanned, wanted);
     if (res.ok && res.data){
       var d = res.data;
+      if (d.redeemed){
+        renderDone("success", "Belohnung eingelöst",
+          "Belohnung herausgeben. Die Karte läuft weiter bei " + d.stamps + "/" + d.stampGoal
+          + " — der heutige Besuch ist schon drauf.");
+        return;
+      }
       var booked = (typeof d.booked === "number") ? d.booked : wanted;
       var gebucht = booked === 1 ? "1 Stempel" : (booked + " Stempel");
       var gekuerzt = booked < wanted ? "\n\nMehr passt nicht mehr auf die Karte." : "";
       renderDone("success",
         d.completesCard ? "Karte ist voll" : "Gestempelt",
         d.completesCard
-          ? (gebucht + " gebucht. Die Karte ist jetzt voll (" + d.stamps + "/" + d.stampGoal + ") — Belohnung einlösen." + gekuerzt)
+          ? (gebucht + " gebucht. Die Karte ist jetzt voll (" + d.stamps + "/" + d.stampGoal + ") — beim nächsten Scan einlösen." + gekuerzt)
           : (gebucht + " gebucht (" + d.stamps + "/" + d.stampGoal + ")." + gekuerzt));
       return;
     }
