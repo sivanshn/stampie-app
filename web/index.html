@@ -642,7 +642,7 @@
     renderLoadingPass();
     api.pass(decodedText).then(function(r){
       if (r.ok && r.data && r.data.full) renderRedeem(r.data);
-      else renderAsking();
+      else renderAsking(r.ok ? r.data : null);
     });
   }
 
@@ -670,10 +670,31 @@
     showSheet();
   }
 
-  function renderAsking(){
+  function renderAsking(d){
     var body = $("sc-sheetBody");
+    /*
+     * Wie viele Stempel ueberhaupt noch draufpassen.
+     *
+     * Der Zaehler bot bisher immer bis zum Hoechstwert an, auch bei 9 von 10. Der Server
+     * deckelte das zwar und buchte nur einen, aber der Kassierer bekam erst hinterher zu
+     * lesen, dass mehr nicht ging -- und beim Kunden entsteht der Eindruck, es sei etwas
+     * verlorengegangen. Was nicht geht, soll gar nicht erst waehlbar sein.
+     *
+     * Ohne Kartenstand (Abfrage fehlgeschlagen) bleibt es beim Hoechstwert; der Server
+     * deckelt dann weiterhin.
+     */
+    var frei = (d && typeof d.stamps === "number" && typeof d.stampGoal === "number")
+      ? Math.max(1, d.stampGoal - d.stamps)
+      : MAX_STAMPS;
+    var maxHier = Math.min(MAX_STAMPS, frei);
+    if (count > maxHier) count = maxHier;
+
+    var stand = (d && typeof d.stamps === "number")
+      ? '<p class="subtitle">Aktuell ' + d.stamps + '/' + d.stampGoal + ' — noch ' + frei + ' frei.</p>'
+      : "";
+
     body.innerHTML =
-      '<div class="sheetTitle">Wie viele Stempel?</div>' +
+      '<div class="sheetTitle">Wie viele Stempel?</div>' + stand +
       '<div class="stepper">' +
         '<button class="stepBtn" id="st-minus">−</button>' +
         '<div class="stepVal" id="st-val">1</div>' +
@@ -684,11 +705,11 @@
     var upd = function(){
       $("st-val").textContent = count;
       $("st-minus").disabled = count <= 1;
-      $("st-plus").disabled = count >= MAX_STAMPS;
+      $("st-plus").disabled = count >= maxHier;
       $("st-confirm").textContent = count === 1 ? "Stempeln" : (count + " Stempel buchen");
     };
     $("st-minus").addEventListener("click", function(){ if (count>1){ count--; upd(); } });
-    $("st-plus").addEventListener("click", function(){ if (count<MAX_STAMPS){ count++; upd(); } });
+    $("st-plus").addEventListener("click", function(){ if (count<maxHier){ count++; upd(); } });
     $("st-confirm").addEventListener("click", function(){ book(); });
     $("st-cancel").addEventListener("click", backToScanning);
     upd();
