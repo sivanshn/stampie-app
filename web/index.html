@@ -106,6 +106,24 @@
   .ntrow .ntdel { margin-top: 8px; }
 
   .hidden { display: none !important; }
+  .homeMenu { position: relative; }
+  .menuBtn { background:none; border:none; font-size:22px; line-height:1; padding:6px 10px; cursor:pointer; color:#111; border-radius:8px; }
+  .menuBtn:active { background:#eee; }
+  .menuDrop { position:absolute; right:0; top:38px; background:#fff; border:1px solid #e5e5e5; border-radius:12px; box-shadow:0 10px 28px rgba(0,0,0,.14); overflow:hidden; min-width:180px; z-index:60; }
+  .menuItem { display:block; width:100%; text-align:left; background:none; border:none; padding:13px 16px; font-size:15px; cursor:pointer; color:#111; }
+  .menuItem:active { background:#f2f2f2; }
+  .menuItem + .menuItem { border-top:1px solid #eee; }
+  .statCards { display:flex; flex-wrap:wrap; gap:10px; margin-top:4px; }
+  .statCard { flex:1 1 140px; background:#fff; border:1px solid #eee; border-radius:14px; padding:14px 16px; }
+  .statCard .num { font-size:26px; font-weight:700; color:#111; }
+  .statCard .lbl { font-size:13px; color:#666; margin-top:2px; }
+  .statSection { margin-top:18px; }
+  .statSection h3 { font-size:15px; margin:0 0 8px; color:#111; }
+  .barRow { display:flex; align-items:center; gap:8px; margin:4px 0; font-size:13px; }
+  .barRow .cap { width:74px; color:#555; flex:none; }
+  .barRow .track { flex:1; background:#eee; border-radius:6px; height:14px; overflow:hidden; }
+  .barRow .fill { background:#111; height:100%; }
+  .barRow .val { width:34px; text-align:right; color:#333; flex:none; }
   .spinner { width: 28px; height: 28px; border: 3px solid #ccc; border-top-color: #1a1a1a; border-radius: 50%; animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>
@@ -147,7 +165,13 @@
           <h1>Stampie</h1>
           <p class="subtitle" id="h-org" style="margin:0">Betrieb</p>
         </div>
-        <button class="linkbtn muted" id="h-logout">Abmelden</button>
+        <div class="homeMenu">
+          <button class="menuBtn" id="h-menu-btn" aria-label="Menü" aria-haspopup="true">☰</button>
+          <div class="menuDrop hidden" id="h-menu" role="menu">
+            <button class="menuItem" id="h-stats" role="menuitem">Statistiken</button>
+            <button class="menuItem" id="h-logout" role="menuitem">Abmelden</button>
+          </div>
+        </div>
       </div>
       <div class="homeActions">
         <button class="homeBtn pri" id="h-stamp">Karte stempeln</button>
@@ -155,6 +179,19 @@
         <button class="homeBtn sec" id="h-notify">Benachrichtigungen</button>
       </div>
       <div class="homeLegal"><button class="linkbtn muted" id="h-legal">Datenschutz &amp; Hilfe</button></div>
+    </div>
+  </section>
+
+  <!-- STATS -->
+  <section id="s-stats" class="screen">
+    <div class="header">
+      <button class="linkbtn" id="st-back">‹ Zurück</button>
+      <span class="title">Statistiken</span>
+      <span style="width:60px"></span>
+    </div>
+    <div class="form" style="justify-content:flex-start">
+      <p class="subtitle" id="st-status">Wird geladen…</p>
+      <div id="st-content"></div>
     </div>
   </section>
 
@@ -296,7 +333,8 @@
     issueCard: function(cardId){ return apiFetch("/api/app/cards/issue","POST",{cardId:cardId},true); },
     listReminders: function(){ return apiFetch("/api/app/reminders","GET",null,true); },
     createReminder: function(payload){ return apiFetch("/api/app/reminders","POST",payload,true); },
-    deleteReminder: function(id){ return apiFetch("/api/app/reminders/delete","POST",{id:id},true); }
+    deleteReminder: function(id){ return apiFetch("/api/app/reminders/delete","POST",{id:id},true); },
+    stats: function(){ return apiFetch("/api/app/stats","GET",null,true); }
   };
 
   // Klare Ansagen anhand des maschinenlesbaren Codes (wie in der nativen App).
@@ -372,12 +410,71 @@
     $("h-org").textContent = orgName;
     show("s-home");
   }
-  $("h-logout").addEventListener("click", function(){ delToken(); show("s-login"); });
+  // ---- menu (Hamburger) ----
+  function closeMenu(){ $("h-menu").classList.add("hidden"); }
+  $("h-menu-btn").addEventListener("click", function(e){ e.stopPropagation(); $("h-menu").classList.toggle("hidden"); });
+  $("h-menu").addEventListener("click", function(e){ e.stopPropagation(); });
+  document.addEventListener("click", closeMenu);
+  $("h-logout").addEventListener("click", function(){ closeMenu(); delToken(); show("s-login"); });
+  $("h-stats").addEventListener("click", function(){ closeMenu(); show("s-stats"); loadStats(); });
   $("h-stamp").addEventListener("click", function(){ openScanner(); });
   $("h-issue").addEventListener("click", function(){ openIssue(); });
   $("h-notify").addEventListener("click", function(){ openNotify(); });
   $("h-legal").addEventListener("click", function(){ show("s-legal"); });
   $("lg-back").addEventListener("click", function(){ show("s-home"); });
+  $("st-back").addEventListener("click", function(){ show("s-home"); });
+
+  // ---- statistics ----
+  function statNum(n){ return (n === null || n === undefined) ? "–" : String(n); }
+  function loadStats(){
+    $("st-status").textContent = "Wird geladen…";
+    $("st-content").innerHTML = "";
+    api.stats().then(function(r){
+      if (!r.ok){
+        $("st-status").textContent = (r.status === 404)
+          ? "Statistiken werden gerade eingerichtet – bald verfügbar."
+          : (r.error || "Konnte Statistiken nicht laden.");
+        return;
+      }
+      renderStats(r.data || {});
+    });
+  }
+  function renderStats(d){
+    $("st-status").textContent = "";
+    var el = $("st-content"), h = "";
+    // Kern-Kacheln
+    h += '<div class="statCards">';
+    h += '<div class="statCard"><div class="num">' + statNum(d.customers) + '</div><div class="lbl">Kunden gesamt</div></div>';
+    h += '<div class="statCard"><div class="num">' + statNum(d.newThisMonth) + '</div><div class="lbl">Neu diesen Monat</div></div>';
+    h += '<div class="statCard"><div class="num">' + statNum(d.active) + '</div><div class="lbl">Aktiv</div></div>';
+    h += '<div class="statCard"><div class="num">' + statNum(d.inactive) + '</div><div class="lbl">Eingeschlafen' + (d.inactiveAfterMonths ? " (&gt;" + d.inactiveAfterMonths + " Mon.)" : "") + '</div></div>';
+    h += '</div>';
+    // Pro Karte: Abschluss + Stempel-Verteilung
+    var cards = d.cards || [];
+    for (var i=0;i<cards.length;i++){
+      var c = cards[i];
+      h += '<div class="statSection"><h3>' + (c.name || "Karte") + '</h3>';
+      h += '<div class="statCards">';
+      h += '<div class="statCard"><div class="num">' + statNum(c.customers) + '</div><div class="lbl">Kunden</div></div>';
+      h += '<div class="statCard"><div class="num">' + statNum(c.full) + '</div><div class="lbl">Voll gestempelt</div></div>';
+      h += '<div class="statCard"><div class="num">' + statNum(c.redeemed) + '</div><div class="lbl">Eingelöst</div></div>';
+      h += '</div>';
+      var dist = c.distribution || [];
+      if (dist.length){
+        var max = 1; for (var k=0;k<dist.length;k++){ if (dist[k].count > max) max = dist[k].count; }
+        h += '<div style="margin-top:10px">';
+        for (var j=0;j<dist.length;j++){
+          var pct = Math.round((dist[j].count / max) * 100);
+          h += '<div class="barRow"><span class="cap">' + dist[j].stamps + ' Stempel</span>'
+             + '<span class="track"><span class="fill" style="width:' + pct + '%"></span></span>'
+             + '<span class="val">' + dist[j].count + '</span></div>';
+        }
+        h += '</div>';
+      }
+      h += '</div>';
+    }
+    el.innerHTML = h;
+  }
 
   // ---- scanner ----
   var scanner = null, scanning = false, locked = false, count = 1, curScanned = null;
