@@ -109,8 +109,8 @@
   .homeMenu { position: relative; }
   .menuBtn { background:none; border:none; font-size:22px; line-height:1; padding:6px 10px; cursor:pointer; color:#111; border-radius:8px; }
   .menuBtn:active { background:#eee; }
-  .menuDrop { position:absolute; right:0; top:38px; background:#fff; border:1px solid #e5e5e5; border-radius:12px; box-shadow:0 10px 28px rgba(0,0,0,.14); overflow:hidden; min-width:180px; z-index:60; }
-  .menuItem { display:block; width:100%; text-align:left; background:none; border:none; padding:13px 16px; font-size:15px; cursor:pointer; color:#111; }
+  .menuDrop { position:absolute; right:0; top:46px; background:#fff; border:1px solid #e5e5e5; border-radius:16px; box-shadow:0 14px 40px rgba(0,0,0,.18); overflow:hidden; width:64vw; max-width:320px; min-width:230px; z-index:60; }
+  .menuItem { display:block; width:100%; text-align:left; background:none; border:none; padding:20px 22px; font-size:18px; font-weight:500; cursor:pointer; color:#111; }
   .menuItem:active { background:#f2f2f2; }
   .menuItem + .menuItem { border-top:1px solid #eee; }
   .statCards { display:flex; flex-wrap:wrap; gap:10px; margin-top:4px; }
@@ -119,11 +119,15 @@
   .statCard .lbl { font-size:13px; color:#666; margin-top:2px; }
   .statSection { margin-top:18px; }
   .statSection h3 { font-size:15px; margin:0 0 8px; color:#111; }
-  .barRow { display:flex; align-items:center; gap:8px; margin:4px 0; font-size:13px; }
-  .barRow .cap { width:74px; color:#555; flex:none; }
-  .barRow .track { flex:1; background:#eee; border-radius:6px; height:14px; overflow:hidden; }
-  .barRow .fill { background:#111; height:100%; }
-  .barRow .val { width:34px; text-align:right; color:#333; flex:none; }
+  .chartBox { background:#fff; border:1px solid #eee; border-radius:14px; padding:12px; margin-top:10px; }
+  .chartBox h4 { margin:0 0 6px; font-size:13px; color:#444; font-weight:600; }
+  .legend { font-size:12px; color:#666; margin-top:4px; }
+  .legend .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin:0 5px 0 12px; vertical-align:middle; }
+  .inactCtl { background:#fff; border:1px solid #eee; border-radius:14px; padding:14px 16px; font-size:14px; color:#333; display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+  .inactCtl input { width:56px; padding:7px 8px; border:1px solid #ddd; border-radius:8px; font-size:16px; text-align:center; }
+  .minibtn { background:#111; color:#fff; border:none; border-radius:8px; padding:8px 14px; font-size:13px; cursor:pointer; }
+  .minibtn:active { opacity:.8; }
+  .miniMsg { font-size:12px; color:#16a34a; }
   .spinner { width: 28px; height: 28px; border: 3px solid #ccc; border-top-color: #1a1a1a; border-radius: 50%; animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>
@@ -334,7 +338,8 @@
     listReminders: function(){ return apiFetch("/api/app/reminders","GET",null,true); },
     createReminder: function(payload){ return apiFetch("/api/app/reminders","POST",payload,true); },
     deleteReminder: function(id){ return apiFetch("/api/app/reminders/delete","POST",{id:id},true); },
-    stats: function(){ return apiFetch("/api/app/stats","GET",null,true); }
+    stats: function(){ return apiFetch("/api/app/stats","GET",null,true); },
+    saveStatsSettings: function(months){ return apiFetch("/api/app/stats/settings","POST",{inaktivNachMonaten:months},true); }
   };
 
   // Klare Ansagen anhand des maschinenlesbaren Codes (wie in der nativen App).
@@ -439,6 +444,46 @@
       renderStats(r.data || {});
     });
   }
+  // Vertikales blaues Balken-Diagramm für die Stempel-Verteilung.
+  function svgBars(dist){
+    var w=330, h=150, padB=24, padT=16, padL=6, n=dist.length;
+    if (!n) return "";
+    var max=1; for (var i=0;i<n;i++) if (dist[i].count>max) max=dist[i].count;
+    var bw=(w-padL*2)/n;
+    var s='<svg viewBox="0 0 '+w+' '+h+'" width="100%" style="display:block">';
+    for (var i=0;i<n;i++){
+      var bh=Math.round((dist[i].count/max)*(h-padB-padT));
+      var x=padL+i*bw+2, bwv=bw-4, y=h-padB-bh;
+      s+='<rect x="'+x+'" y="'+y+'" width="'+bwv+'" height="'+bh+'" rx="3" fill="#2563eb"></rect>';
+      if (dist[i].count>0) s+='<text x="'+(x+bwv/2)+'" y="'+(y-4)+'" font-size="9" text-anchor="middle" fill="#333">'+dist[i].count+'</text>';
+      s+='<text x="'+(x+bwv/2)+'" y="'+(h-8)+'" font-size="9" text-anchor="middle" fill="#999">'+dist[i].stamps+'</text>';
+    }
+    return s+'</svg>';
+  }
+  // Linien-Diagramm: Kunden gesamt (grün) + Neu je Woche (blau).
+  function svgLines(weekly){
+    var w=340, h=180, padL=26, padR=10, padB=28, padT=14, n=weekly.length;
+    if (n<1) return "";
+    var maxV=1; for (var i=0;i<n;i++){ if (weekly[i].customers>maxV) maxV=weekly[i].customers; if (weekly[i]["new"]>maxV) maxV=weekly[i]["new"]; }
+    var iw=w-padL-padR, ih=h-padT-padB;
+    function X(i){ return padL + (n<=1 ? iw/2 : (i/(n-1))*iw); }
+    function Y(v){ return padT + ih - (v/maxV)*ih; }
+    function line(key,color){
+      var d="", pts="";
+      for (var i=0;i<n;i++){ d+=(i?" L":"M")+X(i).toFixed(1)+" "+Y(weekly[i][key]).toFixed(1);
+        pts+='<circle cx="'+X(i).toFixed(1)+'" cy="'+Y(weekly[i][key]).toFixed(1)+'" r="2.5" fill="'+color+'"></circle>'; }
+      return '<path d="'+d+'" fill="none" stroke="'+color+'" stroke-width="2.2"></path>'+pts;
+    }
+    var s='<svg viewBox="0 0 '+w+' '+h+'" width="100%" style="display:block">';
+    s+='<line x1="'+padL+'" y1="'+Y(0)+'" x2="'+(w-padR)+'" y2="'+Y(0)+'" stroke="#eee"></line>';
+    s+='<text x="2" y="'+(Y(maxV)+3)+'" font-size="9" fill="#aaa">'+maxV+'</text>';
+    s+='<text x="2" y="'+(Y(0)+3)+'" font-size="9" fill="#aaa">0</text>';
+    s+=line("customers","#16a34a");
+    s+=line("new","#2563eb");
+    for (var i=0;i<n;i++){ if (n>6 && i%Math.ceil(n/6)!==0 && i!==n-1) continue;
+      s+='<text x="'+X(i).toFixed(1)+'" y="'+(h-9)+'" font-size="8" text-anchor="middle" fill="#999">'+(weekly[i].label||("W"+(i+1)))+'</text>'; }
+    return s+'</svg>';
+  }
   function renderStats(d){
     $("st-status").textContent = "";
     var el = $("st-content"), h = "";
@@ -446,10 +491,23 @@
     h += '<div class="statCards">';
     h += '<div class="statCard"><div class="num">' + statNum(d.customers) + '</div><div class="lbl">Kunden gesamt</div></div>';
     h += '<div class="statCard"><div class="num">' + statNum(d.newThisMonth) + '</div><div class="lbl">Neu diesen Monat</div></div>';
-    h += '<div class="statCard"><div class="num">' + statNum(d.active) + '</div><div class="lbl">Aktiv</div></div>';
-    h += '<div class="statCard"><div class="num">' + statNum(d.inactive) + '</div><div class="lbl">Eingeschlafen' + (d.inactiveAfterMonths ? " (&gt;" + d.inactiveAfterMonths + " Mon.)" : "") + '</div></div>';
     h += '</div>';
-    // Pro Karte: Abschluss + Stempel-Verteilung
+    // Entwicklung (Linien-Diagramm) – nur wenn Wochendaten da sind
+    if (d.weekly && d.weekly.length){
+      h += '<div class="chartBox"><h4>Entwicklung (pro Woche)</h4>' + svgLines(d.weekly)
+         + '<div class="legend"><span class="dot" style="background:#16a34a"></span>Kunden gesamt'
+         + '<span class="dot" style="background:#2563eb"></span>Neue Kunden</div></div>';
+    }
+    // Aktiv / Eingeschlafen + einstellbare Schwelle
+    h += '<div class="statCards" style="margin-top:14px">';
+    h += '<div class="statCard"><div class="num">' + statNum(d.active) + '</div><div class="lbl">Aktiv</div></div>';
+    h += '<div class="statCard"><div class="num">' + statNum(d.inactive) + '</div><div class="lbl">Eingeschlafen</div></div>';
+    h += '</div>';
+    h += '<div class="statSection"><div class="inactCtl">Kunde gilt als inaktiv nach '
+       + '<input id="st-inact" type="number" min="1" max="60" value="' + (d.inactiveAfterMonths || 2) + '" inputmode="numeric"> Monaten'
+       + '<button id="st-inact-save" class="minibtn">Speichern</button>'
+       + '<span id="st-inact-msg" class="miniMsg"></span></div></div>';
+    // Pro Karte: Abschluss + Stempel-Verteilung (blaues Diagramm)
     var cards = d.cards || [];
     for (var i=0;i<cards.length;i++){
       var c = cards[i];
@@ -461,19 +519,22 @@
       h += '</div>';
       var dist = c.distribution || [];
       if (dist.length){
-        var max = 1; for (var k=0;k<dist.length;k++){ if (dist[k].count > max) max = dist[k].count; }
-        h += '<div style="margin-top:10px">';
-        for (var j=0;j<dist.length;j++){
-          var pct = Math.round((dist[j].count / max) * 100);
-          h += '<div class="barRow"><span class="cap">' + dist[j].stamps + ' Stempel</span>'
-             + '<span class="track"><span class="fill" style="width:' + pct + '%"></span></span>'
-             + '<span class="val">' + dist[j].count + '</span></div>';
-        }
-        h += '</div>';
+        h += '<div class="chartBox"><h4>Stempel-Verteilung</h4>' + svgBars(dist)
+           + '<div class="legend">Anzahl Kunden je Stempelstand</div></div>';
       }
       h += '</div>';
     }
     el.innerHTML = h;
+    // Inaktiv-Schwelle speichern
+    var sv = $("st-inact-save");
+    if (sv) sv.addEventListener("click", function(){
+      var v = parseInt(($("st-inact")||{}).value, 10); if (!v || v<1) v=2; if (v>60) v=60;
+      $("st-inact-msg").textContent = "…";
+      api.saveStatsSettings(v).then(function(r){
+        if (r.ok){ $("st-inact-msg").textContent = "gespeichert"; loadStats(); }
+        else { $("st-inact-msg").style.color = "#c00"; $("st-inact-msg").textContent = (r.status===404) ? "Server-Teil folgt noch" : (r.error || "Fehler"); }
+      });
+    });
   }
 
   // ---- scanner ----
