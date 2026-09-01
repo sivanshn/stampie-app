@@ -253,8 +253,6 @@
       <label class="ntlabel">Karte</label>
       <select id="nt-card" class="ntinput"></select>
 
-      <label class="ntlabel">Überschrift (optional)</label>
-      <input id="nt-headline" class="ntinput" maxlength="60" placeholder="z. B. Zeit für einen Besuch" />
 
       <label class="ntlabel">Text</label>
       <textarea id="nt-text" class="ntinput" maxlength="150" rows="3" placeholder="Zeit für einen neuen Haarschnitt ✂️"></textarea>
@@ -470,11 +468,19 @@
     function Y(v){ return padT + ih - (v/maxV)*ih; }
     function line(key,color){
       var d="", pts="";
-      for (var i=0;i<n;i++){ d+=(i?" L":"M")+X(i).toFixed(1)+" "+Y(weekly[i][key]).toFixed(1);
-        pts+='<circle cx="'+X(i).toFixed(1)+'" cy="'+Y(weekly[i][key]).toFixed(1)+'" r="2.5" fill="'+color+'"></circle>'; }
+      for (var i=0;i<n;i++){
+        var x=X(i).toFixed(1), y=Y(weekly[i][key]).toFixed(1);
+        d+=(i?" L":"M")+x+" "+y;
+        // Sichtbarer Punkt plus eine unsichtbare, groessere Trefferflaeche: 2,5 px trifft
+        // auf einem Handy niemand mit dem Finger.
+        pts+='<g class="pt" data-i="'+i+'" data-k="'+key+'" style="cursor:pointer">'
+           + '<circle cx="'+x+'" cy="'+y+'" r="12" fill="transparent"></circle>'
+           + '<circle class="dot" cx="'+x+'" cy="'+y+'" r="2.5" fill="'+color+'"></circle>'
+           + '</g>';
+      }
       return '<path d="'+d+'" fill="none" stroke="'+color+'" stroke-width="2.2"></path>'+pts;
     }
-    var s='<svg viewBox="0 0 '+w+' '+h+'" width="100%" style="display:block">';
+    var s='<svg id="lc-svg" viewBox="0 0 '+w+' '+h+'" width="100%" style="display:block;touch-action:manipulation">';
     s+='<line x1="'+padL+'" y1="'+Y(0)+'" x2="'+(w-padR)+'" y2="'+Y(0)+'" stroke="#eee"></line>';
     s+='<text x="2" y="'+(Y(maxV)+3)+'" font-size="9" fill="#aaa">'+maxV+'</text>';
     s+='<text x="2" y="'+(Y(0)+3)+'" font-size="9" fill="#aaa">0</text>';
@@ -483,6 +489,35 @@
     for (var i=0;i<n;i++){ if (n>6 && i%Math.ceil(n/6)!==0 && i!==n-1) continue;
       s+='<text x="'+X(i).toFixed(1)+'" y="'+(h-9)+'" font-size="8" text-anchor="middle" fill="#999">'+(weekly[i].label||("W"+(i+1)))+'</text>'; }
     return s+'</svg>';
+  }
+
+  // Punkte antippbar machen: der angetippte Wert steht darunter im Klartext.
+  // Ohne das zeigt das Diagramm eine Kurve, aber keine Zahl — und auf einem Handy gibt es
+  // kein Hover, mit dem man sie sich holen koennte.
+  function wireChartPoints(weekly){
+    var cap = $("lc-cap");
+    var svg = $("lc-svg");
+    if (!cap || !svg || !weekly) return;
+    var groups = svg.querySelectorAll(".pt");
+    function clear(){
+      for (var j=0;j<groups.length;j++){
+        var dot = groups[j].querySelector(".dot");
+        if (dot) dot.setAttribute("r","2.5");
+      }
+    }
+    for (var i=0;i<groups.length;i++){
+      groups[i].addEventListener("click", function(){
+        var idx = parseInt(this.getAttribute("data-i"),10);
+        var key = this.getAttribute("data-k");
+        var wk = weekly[idx];
+        if (!wk) return;
+        clear();
+        var dot = this.querySelector(".dot");
+        if (dot) dot.setAttribute("r","5");
+        cap.textContent = (wk.label || ("Woche " + (idx+1))) + ": "
+          + (key === "customers" ? "Kunden gesamt " : "Neue Kunden ") + wk[key];
+      });
+    }
   }
   function renderStats(d){
     $("st-status").textContent = "";
@@ -496,7 +531,8 @@
     if (d.weekly && d.weekly.length){
       h += '<div class="chartBox"><h4>Entwicklung (pro Woche)</h4>' + svgLines(d.weekly)
          + '<div class="legend"><span class="dot" style="background:#16a34a"></span>Kunden gesamt'
-         + '<span class="dot" style="background:#2563eb"></span>Neue Kunden</div></div>';
+         + '<span class="dot" style="background:#2563eb"></span>Neue Kunden</div>'
+         + '<div id="lc-cap" class="legend" style="margin-top:2px;color:#666">Auf einen Punkt tippen, um den Wert zu sehen</div></div>';
     }
     // Aktiv / Eingeschlafen + einstellbare Schwelle
     h += '<div class="statCards" style="margin-top:14px">';
@@ -524,6 +560,7 @@
       h += '</div>';
     }
     el.innerHTML = h;
+    wireChartPoints(d.weekly);
     // Inaktiv-Schwelle speichern
     var sv = $("st-inact-save");
     if (sv) sv.addEventListener("click", function(){
@@ -804,7 +841,6 @@
     $("nt-error").textContent = "";
     var cardId = $("nt-card").value;
     var body = $("nt-text").value.trim();
-    var headline = $("nt-headline").value.trim();
     var every = parseInt($("nt-every").value, 10);
     var unit = $("nt-unit").value;
     if (!cardId){ $("nt-error").textContent = "Bitte eine Karte wählen."; return; }
@@ -814,10 +850,10 @@
     var intervalMinutes = every * factor;
     if (intervalMinutes > 365 * 24 * 60){ $("nt-error").textContent = "Höchstens 365 Tage."; return; }
     btn.disabled = true; btn.textContent = "Speichert…";
-    var res = await api.createReminder({ cardId: cardId, headline: headline || null, body: body, intervalMinutes: intervalMinutes });
+    var res = await api.createReminder({ cardId: cardId, headline: null, body: body, intervalMinutes: intervalMinutes });
     btn.disabled = false; btn.textContent = "Speichern";
     if (!res.ok){ $("nt-error").textContent = res.error || "Konnte nicht gespeichert werden."; return; }
-    $("nt-text").value = ""; $("nt-headline").value = ""; $("nt-count").textContent = "0";
+    $("nt-text").value = ""; $("nt-count").textContent = "0";
     loadReminders();
   });
 
