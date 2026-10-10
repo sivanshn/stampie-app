@@ -104,6 +104,9 @@
   .ntrow .ntmeta { font-size: 13px; color: #888; margin-top: 2px; }
   .ntrow .nttext { font-size: 14px; color: #333; margin-top: 6px; }
   .ntrow .ntdel { margin-top: 8px; }
+  .ntquota { font-size: 13px; color: #888; margin-top: 10px; }
+  .ntquota.none { color: #c0392b; }
+  .ntsep { height: 1px; background: #e5e5e5; margin: 28px 0 4px; }
 
   .hidden { display: none !important; }
   .homeMenu { position: relative; }
@@ -255,11 +258,36 @@
       <span style="width:60px"></span>
     </div>
     <div class="pad">
-      <p class="subtitle">Automatische Erinnerung an Kunden, die seit der eingestellten Zeit nicht mehr da waren — und danach immer wieder, bis sie zurückkommen. Wer wiederkommt, fällt raus.</p>
 
       <label class="ntlabel">Karte</label>
       <select id="nt-card" class="ntinput"></select>
 
+      <div id="msg-block">
+      <h3 class="ntsub">Nachricht an alle</h3>
+      <p class="subtitle">Geht an alle Kunden, die diese Karte im Wallet haben. Pro Monat ist eine sofortige und eine geplante Nachricht möglich.</p>
+
+      <label class="ntlabel">Text</label>
+      <textarea id="msg-text" class="ntinput" maxlength="150" rows="3" placeholder="Diese Woche: Paella-Abend 🥘"></textarea>
+      <div class="ntcount"><span id="msg-count">0</span>/150</div>
+
+      <label class="ntlabel">Wann</label>
+      <select id="msg-mode" class="ntinput">
+        <option value="now">Jetzt sofort</option>
+        <option value="later">Zu einem Zeitpunkt</option>
+      </select>
+      <input id="msg-when" class="ntinput hidden" type="datetime-local" style="margin-top:8px" />
+
+      <div class="ntquota" id="msg-quota"></div>
+      <div class="error" id="msg-error"></div>
+      <button class="primary" id="msg-send">Senden</button>
+
+      <div id="msg-list"></div>
+
+      <div class="ntsep"></div>
+      </div>
+
+      <h3 class="ntsub">Automatische Erinnerung</h3>
+      <p class="subtitle">Geht nur an Kunden, die seit der eingestellten Zeit nicht mehr da waren — und danach immer wieder, bis sie zurückkommen. Wer wiederkommt, fällt raus.</p>
 
       <label class="ntlabel">Text</label>
       <textarea id="nt-text" class="ntinput" maxlength="150" rows="3" placeholder="Zeit für einen neuen Haarschnitt ✂️"></textarea>
@@ -344,6 +372,8 @@
     createReminder: function(payload){ return apiFetch("/api/app/reminders","POST",payload,true); },
     deleteReminder: function(id){ return apiFetch("/api/app/reminders/delete","POST",{id:id},true); },
     pass: function(scanned){ return apiFetch("/api/app/pass?serial=" + encodeURIComponent(scanned),"GET",null,true); },
+    listMessages: function(){ return apiFetch("/api/app/messages","GET",null,true); },
+    createMessage: function(payload){ return apiFetch("/api/app/messages","POST",payload,true); },
     stats: function(){ return apiFetch("/api/app/stats","GET",null,true); },
     saveStatsSettings: function(months){ return apiFetch("/api/app/stats/settings","POST",{inaktivNachMonaten:months},true); }
   };
@@ -840,6 +870,24 @@
   // ---- Benachrichtigungen ----
   $("nt-back").addEventListener("click", function(){ show("s-home"); });
   $("nt-text").addEventListener("input", function(){ $("nt-count").textContent = this.value.length; });
+  $("msg-text").addEventListener("input", function(){ $("msg-count").textContent = this.value.length; });
+
+  // Das Datumsfeld steht nur im Weg, solange "Jetzt sofort" gewählt ist.
+  $("msg-mode").addEventListener("change", function(){
+    var later = this.value === "later";
+    $("msg-when").classList.toggle("hidden", !later);
+    if (later && !$("msg-when").value) $("msg-when").value = defaultWhen();
+    renderQuota();
+  });
+  $("nt-card").addEventListener("change", renderQuota);
+
+  /** Vorschlag für den Zeitpunkt: morgen um zehn — ein Datum, das niemand erst suchen muss. */
+  function defaultWhen(){
+    var d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(10, 0, 0, 0);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  }
 
   function fmtThreshold(min){
     if (min % 1440 === 0){ var d = min / 1440; return d + (d === 1 ? " Tag" : " Tage"); }
@@ -869,8 +917,124 @@
         });
       }
     }
+    loadMessages();
     loadReminders();
   }
+
+  // ---- Nachricht an alle ----
+  /** Was diesen Monat je Karte noch übrig ist — kommt vom Server, nicht aus dem Browser. */
+  var msgQuota = [];
+
+  function quotaFor(cardId){
+    for (var i = 0; i < msgQuota.length; i++) if (msgQuota[i].cardId === cardId) return msgQuota[i];
+    return null;
+  }
+
+  /*
+   * Der Hinweis unter dem Feld sagt vorher, was geht — statt den Betrieb den Text tippen
+   * und erst beim Senden eine Absage kassieren zu lassen.
+   */
+  function renderQuota(){
+    var el = $("msg-quota");
+    var q = quotaFor($("nt-card").value);
+    var later = $("msg-mode").value === "later";
+    if (!q){ el.textContent = ""; el.classList.remove("none"); $("msg-send").disabled = false; return; }
+    var left = later ? q.scheduledLeft : q.immediateLeft;
+    el.classList.toggle("none", left <= 0);
+    $("msg-send").disabled = left <= 0;
+    if (left > 0){
+      el.textContent = later
+        ? "Diesen Monat ist noch eine geplante Nachricht möglich."
+        : "Diesen Monat ist noch eine sofortige Nachricht möglich.";
+    } else {
+      el.textContent = later
+        ? "Für diesen Monat ist bereits eine Nachricht geplant."
+        : "Diesen Monat wurde bereits eine Nachricht sofort verschickt.";
+    }
+  }
+
+  function fmtWhen(iso){
+    var d = new Date(iso);
+    return d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  }
+
+  async function loadMessages(){
+    var list = $("msg-list");
+    list.innerHTML = "";
+    var res = await api.listMessages();
+    if (res.status === 404){
+      /*
+       * Das Backend kennt die Route noch nicht.
+       *
+       * PWA und Backend liegen in getrennten Repos und werden getrennt ausgerollt. Steht
+       * die PWA zuerst, wäre ein Knopf sichtbar, der nur eine Fehlermeldung produziert —
+       * also lieber gar keinen zeigen, bis die Gegenseite da ist.
+       */
+      $("msg-block").classList.add("hidden");
+      return;
+    }
+    $("msg-block").classList.remove("hidden");
+    if (!res.ok || !res.data){
+      msgQuota = [];
+      renderQuota();
+      return;
+    }
+    msgQuota = res.data.quota || [];
+    renderQuota();
+    var rows = res.data.messages || [];
+    if (rows.length === 0) return;
+    var h = '<h3 class="ntsub">Verschickt</h3>';
+    list.innerHTML = h;
+    rows.forEach(function(m){
+      var el = document.createElement("div");
+      el.className = "ntrow";
+      el.innerHTML = '<div class="ntcard"></div><div class="ntmeta"></div><div class="nttext"></div>';
+      el.querySelector(".ntcard").textContent = m.cardName;
+      var meta = m.sentAt
+        ? "verschickt " + fmtWhen(m.sentAt) + " · " + m.recipients + " Karten"
+        : "geplant für " + fmtWhen(m.scheduledFor);
+      el.querySelector(".ntmeta").textContent = m.error ? (meta + " · Fehler") : meta;
+      el.querySelector(".nttext").textContent = m.body;
+      list.appendChild(el);
+    });
+  }
+
+  $("msg-send").addEventListener("click", async function(){
+    var btn = this;
+    $("msg-error").textContent = "";
+    var cardId = $("nt-card").value;
+    var body = $("msg-text").value.trim();
+    var later = $("msg-mode").value === "later";
+    if (!cardId){ $("msg-error").textContent = "Bitte eine Karte wählen."; return; }
+    if (!body){ $("msg-error").textContent = "Bitte einen Text eingeben."; return; }
+
+    var scheduledFor = null;
+    if (later){
+      var raw = $("msg-when").value;
+      if (!raw){ $("msg-error").textContent = "Bitte einen Zeitpunkt wählen."; return; }
+      var when = new Date(raw);
+      if (isNaN(when.getTime())){ $("msg-error").textContent = "Der Zeitpunkt ist nicht lesbar."; return; }
+      if (when.getTime() < Date.now() + 5 * 60000){
+        $("msg-error").textContent = "Der Zeitpunkt muss mindestens fünf Minuten in der Zukunft liegen.";
+        return;
+      }
+      scheduledFor = when.toISOString();
+    }
+
+    btn.disabled = true;
+    btn.textContent = later ? "Plant…" : "Sendet…";
+    var res = await api.createMessage({ cardId: cardId, body: body, scheduledFor: scheduledFor });
+    btn.disabled = false;
+    btn.textContent = "Senden";
+    if (!res.ok){
+      $("msg-error").textContent = res.error || "Konnte nicht verschickt werden.";
+      if (res.code === "quota") loadMessages();
+      return;
+    }
+    $("msg-text").value = "";
+    $("msg-count").textContent = "0";
+    loadMessages();
+  });
 
   async function loadReminders(){
     var list = $("nt-list");
