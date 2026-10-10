@@ -106,7 +106,6 @@
   .ntrow .ntdel { margin-top: 8px; }
   .ntquota { font-size: 13px; color: #888; margin-top: 10px; }
   .ntquota.none { color: #c0392b; }
-  .ntsep { height: 1px; background: #e5e5e5; margin: 28px 0 4px; }
 
   .hidden { display: none !important; }
   .homeMenu { position: relative; }
@@ -286,32 +285,7 @@
       <button class="primary" id="msg-send">Senden</button>
 
       <div id="msg-list"></div>
-
-      <div class="ntsep"></div>
       </div>
-
-      <h3 class="ntsub">Automatische Erinnerung</h3>
-      <p class="subtitle">Geht nur an Kunden, die seit der eingestellten Zeit nicht mehr da waren — und danach immer wieder, bis sie zurückkommen. Wer wiederkommt, fällt raus.</p>
-
-      <label class="ntlabel">Text</label>
-      <textarea id="nt-text" class="ntinput" maxlength="150" rows="3" placeholder="Zeit für einen neuen Haarschnitt ✂️"></textarea>
-      <div class="ntcount"><span id="nt-count">0</span>/150</div>
-
-      <label class="ntlabel">Erinnern, wenn so lange nicht da:</label>
-      <div style="display:flex; gap:8px">
-        <input id="nt-every" class="ntinput" style="flex:1" type="number" min="1" value="20" inputmode="numeric" />
-        <select id="nt-unit" class="ntinput" style="flex:1">
-          <option value="minutes">Minuten</option>
-          <option value="hours">Stunden</option>
-          <option value="days" selected>Tage</option>
-        </select>
-      </div>
-
-      <div class="error" id="nt-error"></div>
-      <button class="primary" id="nt-save">Speichern</button>
-
-      <h3 class="ntsub">Aktive Erinnerungen</h3>
-      <div id="nt-list"><div class="center" style="min-height:60px"><div class="spinner"></div></div></div>
     </div>
   </section>
 
@@ -372,9 +346,6 @@
     stamp: function(scanned,count){ return apiFetch("/api/app/stamp","POST",{scanned:scanned,count:count||1},true); },
     listCards: function(){ return apiFetch("/api/app/cards","GET",null,true); },
     issueCard: function(cardId){ return apiFetch("/api/app/cards/issue","POST",{cardId:cardId},true); },
-    listReminders: function(){ return apiFetch("/api/app/reminders","GET",null,true); },
-    createReminder: function(payload){ return apiFetch("/api/app/reminders","POST",payload,true); },
-    deleteReminder: function(id){ return apiFetch("/api/app/reminders/delete","POST",{id:id},true); },
     pass: function(scanned){ return apiFetch("/api/app/pass?serial=" + encodeURIComponent(scanned),"GET",null,true); },
     listMessages: function(){ return apiFetch("/api/app/messages","GET",null,true); },
     createMessage: function(payload){ return apiFetch("/api/app/messages","POST",payload,true); },
@@ -874,7 +845,6 @@
 
   // ---- Benachrichtigungen ----
   $("nt-back").addEventListener("click", function(){ show("s-home"); });
-  $("nt-text").addEventListener("input", function(){ $("nt-count").textContent = this.value.length; });
   $("msg-text").addEventListener("input", function(){ $("msg-count").textContent = this.value.length; });
 
   // Die Tagesauswahl steht nur im Weg, solange "Jetzt sofort" gewählt ist.
@@ -901,15 +871,8 @@
     }
   })();
 
-  function fmtThreshold(min){
-    if (min % 1440 === 0){ var d = min / 1440; return d + (d === 1 ? " Tag" : " Tage"); }
-    if (min % 60 === 0){ var h = min / 60; return h + (h === 1 ? " Stunde" : " Stunden"); }
-    return min + (min === 1 ? " Minute" : " Minuten");
-  }
-
   async function openNotify(){
     show("s-notify");
-    $("nt-error").textContent = "";
     var sel = $("nt-card");
     sel.innerHTML = '<option>Lädt…</option>';
     var cardsRes = await api.listCards();
@@ -930,7 +893,6 @@
       }
     }
     loadMessages();
-    loadReminders();
   }
 
   // ---- Nachricht an alle ----
@@ -1080,52 +1042,6 @@
       setTimeout(function(){ $("msg-error").style.color = ""; $("msg-error").textContent = ""; }, 6000);
     }
     loadMessages();
-  });
-
-  async function loadReminders(){
-    var list = $("nt-list");
-    list.innerHTML = '<div class="center" style="min-height:60px"><div class="spinner"></div></div>';
-    var res = await api.listReminders();
-    if (!res.ok || !res.data){ list.innerHTML = '<p class="error">' + (res.error || "Konnte nicht geladen werden.") + '</p>'; return; }
-    var rows = res.data.reminders || [];
-    if (rows.length === 0){ list.innerHTML = '<p class="subtitle">Noch keine Erinnerung angelegt.</p>'; return; }
-    list.innerHTML = "";
-    rows.forEach(function(r){
-      var el = document.createElement("div");
-      el.className = "ntrow";
-      el.innerHTML = '<div class="ntcard"></div><div class="ntmeta"></div><div class="nttext"></div>' +
-        '<button class="linkbtn ntdel" style="color:#c0392b; margin-top:8px">Löschen</button>';
-      el.querySelector(".ntcard").textContent = r.cardName;
-      el.querySelector(".ntmeta").textContent = "wenn " + fmtThreshold(r.intervalMinutes) + " nicht da" + (r.enabled ? "" : " · aus");
-      el.querySelector(".nttext").textContent = (r.headline ? (r.headline + " — ") : "") + r.body;
-      el.querySelector(".ntdel").addEventListener("click", async function(){
-        this.disabled = true; this.textContent = "Lösche…";
-        var d = await api.deleteReminder(r.id);
-        if (d.ok) loadReminders(); else { this.disabled = false; this.textContent = "Löschen"; }
-      });
-      list.appendChild(el);
-    });
-  }
-
-  $("nt-save").addEventListener("click", async function(){
-    var btn = this;
-    $("nt-error").textContent = "";
-    var cardId = $("nt-card").value;
-    var body = $("nt-text").value.trim();
-    var every = parseInt($("nt-every").value, 10);
-    var unit = $("nt-unit").value;
-    if (!cardId){ $("nt-error").textContent = "Bitte eine Karte wählen."; return; }
-    if (!body){ $("nt-error").textContent = "Bitte einen Text eingeben."; return; }
-    if (!every || every < 1){ $("nt-error").textContent = "Bitte eine gültige Zahl angeben."; return; }
-    var factor = unit === "minutes" ? 1 : (unit === "hours" ? 60 : 1440);
-    var intervalMinutes = every * factor;
-    if (intervalMinutes > 365 * 24 * 60){ $("nt-error").textContent = "Höchstens 365 Tage."; return; }
-    btn.disabled = true; btn.textContent = "Speichert…";
-    var res = await api.createReminder({ cardId: cardId, headline: null, body: body, intervalMinutes: intervalMinutes });
-    btn.disabled = false; btn.textContent = "Speichern";
-    if (!res.ok){ $("nt-error").textContent = res.error || "Konnte nicht gespeichert werden."; return; }
-    $("nt-text").value = ""; $("nt-count").textContent = "0";
-    loadReminders();
   });
 
   // ---- service worker ----
